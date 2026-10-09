@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "6"
+CURRENT_VERSION = "7"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -1140,6 +1140,7 @@ class AutoAdsPowerGUI:
 
         api_frame = ctk.CTkFrame(root, corner_radius=10, fg_color="#FAFAFA", border_width=1, border_color="#E0C8D0")
         api_frame.pack(pady=5, padx=20, fill="x")
+        self.api_frame = api_frame
         api_frame.grid_columnconfigure(1, weight=1) 
         api_frame.grid_columnconfigure(3, weight=1) 
 
@@ -1272,13 +1273,6 @@ class AutoAdsPowerGUI:
                     bg = DraggableBackground(self.root, item.get("file"), x=item.get("x"), y=item.get("y"), size=item.get("size"))
                     bg.angle = item.get("angle", 0)
                     bg.update_image()
-                    bg.lock() 
-                    if item.get("file") == "img2.png":
-                        try:
-                            bg.label.lift(top_header_frame)
-                        except:
-                            try: bg.label.lift()
-                            except: pass
                     self.bg_images.append(bg)
                 self.log_msg("HỆ THỐNG", "✨ Đã load thành công giao diện Custom từ file config!")
             except Exception as e:
@@ -1455,16 +1449,18 @@ class AutoAdsPowerGUI:
         self._heart_canvas.place(x=0, y=0, width=W, height=H)
         self._heart_canvas.tk.call('lower', self._heart_canvas._w)
 
-        # Đảm bảo tất cả các ảnh gấu luôn nằm trên canvas trái tim rơi (không bao giờ bị che)
+        # Đảm bảo tất cả các ảnh gấu luôn nằm trên canvas trái tim rơi (không bị che bởi tuyết rơi)
         for bg in getattr(self, "bg_images", []):
             if hasattr(bg, "label") and bg.label:
                 try: bg.label.lift(self._heart_canvas)
                 except: pass
-        # Riêng gấu img2 (thò đầu trên tiêu đề) luôn được nâng lên lớp cao nhất
-        for bg in getattr(self, "bg_images", []):
-            if getattr(bg, "image_path", "") == "img2.png" and hasattr(bg, "label") and bg.label:
-                try: bg.label.lift()
-                except: pass
+        # Đảm bảo bảng chức năng và thanh header luôn nằm TRÊN các ảnh nền (không bao giờ bị che chữ)
+        if hasattr(self, "top_header_frame") and self.top_header_frame:
+            try: self.top_header_frame.lift()
+            except: pass
+        if hasattr(self, "api_frame") and self.api_frame:
+            try: self.api_frame.lift()
+            except: pass
 
         self._falling_hearts = []
         heart_colors = ["#F4B8C8", "#E88FAC", "#F9D0DA", "#D4799A", "#FADADD", "#C75B8A"]
@@ -5702,12 +5698,6 @@ class AutoAdsPowerGUI:
                 bg.angle = item.get("angle", 0)
                 bg.update_image()
                 bg.lock()
-                if item["file"] == "img2.png":
-                    try:
-                        bg.label.lift(getattr(self, 'top_header_frame', None))
-                    except:
-                        try: bg.label.lift()
-                        except: pass
                 self.bg_images.append(bg)
             except: pass
 
