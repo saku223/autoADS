@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "1.0.2"
+CURRENT_VERSION = "3"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -797,7 +797,7 @@ class UpdateDialog(ctk.CTkToplevel):
                 try:
                     shutil.copy2(temp_file, "app_update.py")
                 except: pass
-                self.after(0, self._apply_hot_update)
+                self.after(0, self._show_hot_update_success)
                 return
 
             if os.path.getsize(temp_file) < 500000:
@@ -806,19 +806,59 @@ class UpdateDialog(ctk.CTkToplevel):
                     if b"<!DOCTYPE html" in head or b"<html" in head:
                         raise Exception("Link tải trả về trang HTML thay vì file exe! Vui lòng kiểm tra lại link.")
 
-            self.after(0, lambda: self._apply_update(temp_file))
+            self.after(0, lambda: self._show_exe_update_success(temp_file))
 
         except Exception as e:
             self.after(0, lambda err=str(e): self._download_failed(err))
 
-    def _apply_hot_update(self):
+    def _show_hot_update_success(self):
         self.progress_bar.set(1.0)
-        self.lbl_progress.configure(text="✅ Đã nạp xong tính năng mới (300KB)! Đang khởi động lại...", text_color="#27AE60")
+        self.lbl_progress.configure(
+            text="🎉 Đã tải và cài đặt xong! Vui lòng khởi động lại tool để áp dụng.",
+            text_color="#27AE60"
+        )
+        self.btn_action.configure(
+            state="normal",
+            text="🔄 Khởi động lại ngay",
+            fg_color="#27AE60",
+            hover_color="#219653",
+            command=self._restart_now
+        )
+        self.btn_cancel.configure(
+            state="normal",
+            text="Đóng (Mở lại sau)",
+            fg_color="#D5DBDB",
+            hover_color="#BDC3C7",
+            command=self.destroy
+        )
+
+    def _restart_now(self):
+        self.lbl_progress.configure(text="⏳ Đang đóng và khởi động lại tool...", text_color="#2980B9")
+        self.btn_action.configure(state="disabled")
+        self.btn_cancel.configure(state="disabled")
+        try:
+            self.update_idletasks()
+        except: pass
+
         is_frozen = getattr(sys, 'frozen', False)
-        target = sys.executable if is_frozen else sys.executable
-        args = [target] if is_frozen else [sys.executable, "tool_ads_ui.py"]
-        time.sleep(1)
-        subprocess.Popen(args)
+        exe_path = sys.executable if is_frozen else sys.executable
+        args = [exe_path] if is_frozen else [sys.executable, "tool_ads_ui.py"]
+        
+        try:
+            DETACHED_PROCESS = 0x00000008
+            subprocess.Popen(
+                args,
+                creationflags=DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                close_fds=True
+            )
+        except Exception:
+            try:
+                subprocess.Popen(args)
+            except Exception:
+                try:
+                    os.system(f'start "" "{exe_path}"')
+                except: pass
+        time.sleep(0.5)
         os._exit(0)
 
     def _update_progress(self, progress, text):
@@ -833,9 +873,34 @@ class UpdateDialog(ctk.CTkToplevel):
         self.btn_cancel.configure(state="normal")
         self.lbl_progress.configure(text=f"❌ Lỗi tải bản mới: {err_msg[:60]}", text_color="#C0392B")
 
-    def _apply_update(self, temp_file):
+    def _show_exe_update_success(self, temp_file):
         self.progress_bar.set(1.0)
-        self.lbl_progress.configure(text="✅ Tải xong! Đang tự động thay thế & khởi động lại...", text_color="#27AE60")
+        self.lbl_progress.configure(
+            text="🎉 Đã tải xong bản mới! Bấm [Khởi động lại ngay] để hoàn tất thay thế.",
+            text_color="#27AE60"
+        )
+        self.btn_action.configure(
+            state="normal",
+            text="🔄 Khởi động lại ngay",
+            fg_color="#27AE60",
+            hover_color="#219653",
+            command=lambda: self._execute_exe_updater(temp_file)
+        )
+        self.btn_cancel.configure(
+            state="normal",
+            text="Để sau",
+            fg_color="#D5DBDB",
+            hover_color="#BDC3C7",
+            command=self.destroy
+        )
+
+    def _execute_exe_updater(self, temp_file):
+        self.lbl_progress.configure(text="⏳ Đang tự động thay thế & khởi động lại...", text_color="#2980B9")
+        self.btn_action.configure(state="disabled")
+        self.btn_cancel.configure(state="disabled")
+        try:
+            self.update_idletasks()
+        except: pass
         
         is_frozen = getattr(sys, 'frozen', False)
         target_exe = sys.executable if is_frozen else os.path.abspath("tool_ads_ui.exe")
