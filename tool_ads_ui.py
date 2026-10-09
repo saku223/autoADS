@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "1.1.2"
+CURRENT_VERSION = "1.1.3"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -734,9 +734,22 @@ class UpdateDialog(ctk.CTkToplevel):
 
         self.title("🔔 Trung Tâm Cập Nhật - Auto AdsPower")
         width, height = 560, 530
-        target = get_target_monitor_rect(width, height)
-        x = int(target["left"] + (target["width"] / 2) - (width / 2))
-        y = int(target["top"] + (target["height"] / 2) - (height / 2))
+        try:
+            main_x = self.parent.winfo_x()
+            main_y = self.parent.winfo_y()
+            main_w = self.parent.winfo_width()
+            main_h = self.parent.winfo_height()
+            if main_w > 100 and main_h > 100:
+                x = int(main_x + (main_w / 2) - (width / 2))
+                y = int(main_y + (main_h / 2) - (height / 2))
+            else:
+                target = get_target_monitor_rect(width, height)
+                x = int(target["left"] + (target["width"] / 2) - (width / 2))
+                y = int(target["top"] + (target["height"] / 2) - (height / 2))
+        except Exception:
+            target = get_target_monitor_rect(width, height)
+            x = int(target["left"] + (target["width"] / 2) - (width / 2))
+            y = int(target["top"] + (target["height"] / 2) - (height / 2))
         self.geometry(f"{width}x{height}+{x}+{y}")
         self.resizable(True, True)
         self.configure(fg_color="#F8F3F5")
@@ -1419,7 +1432,25 @@ class AutoAdsPowerGUI:
         except Exception:
             pass
 
-        # 1. Kiểm tra trực tiếp từ GitHub Releases API (sắp xếp theo ngày phát hành mới nhất)
+        # 1. Kiểm tra qua GitHub Raw version.json (Siêu tốc, KHÔNG BAO GIỜ bị giới hạn API Rate Limit của GitHub)
+        try:
+            raw_v_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/version.json?_={int(time.time()*1000)}"
+            v_res = requests.get(raw_v_url, headers={"Cache-Control": "no-cache, no-store", "Pragma": "no-cache"}, timeout=4)
+            if v_res.status_code == 200:
+                v_data = v_res.json()
+                raw_v = (v_data.get("version") or "").lstrip("v").strip()
+                if raw_v and is_newer_version(raw_v, cur_v):
+                    upd = {
+                        "version": raw_v,
+                        "download_url": v_data.get("download_url") or f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/tool_ads_ui.py",
+                        "changelog": v_data.get("changelog") or f"Bản cập nhật nóng v{raw_v}"
+                    }
+                    self.update_info = upd
+                    return upd
+        except Exception:
+            pass
+
+        # 2. Kiểm tra trực tiếp từ GitHub Releases API (sắp xếp theo ngày phát hành mới nhất)
         try:
             if GITHUB_REPO:
                 headers = {
@@ -1455,6 +1486,9 @@ class AutoAdsPowerGUI:
                         )
                         for r_item in sorted_rels:
                             tag = (r_item.get("tag_name") or "").lstrip("v").strip()
+                            # Bỏ qua các tag test cũ dạng số đơn lẻ (v3..v9) khi phiên bản hiện tại là x.y.z
+                            if tag in ["3", "4", "5", "6", "7", "8", "9"] and "." in str(cur_v):
+                                continue
                             if tag and is_newer_version(tag, cur_v):
                                 download_url = ""
                                 for asset in r_item.get("assets", []):
