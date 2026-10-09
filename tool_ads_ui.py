@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "7"
+CURRENT_VERSION = "8"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -110,52 +110,102 @@ def remove_accents(input_str):
     return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8')
 
 # ================= HÀM ĐỊNH DANH ĐƯỜNG DẪN THỰC VÀ ÂM THANH =================
-def get_real_exe_path():
-    """Lấy chính xác đường dẫn file exe thực sự của người dùng, KHÔNG lấy file tạm ONEFIL trong Temp."""
-    # 1. Nuitka onefile environment variable (Chính xác 100% khi chạy EXE đóng gói bởi Nuitka)
-    nuitka_bin = os.environ.get("NUITKA_ONEFILE_BINARY")
-    if nuitka_bin and os.path.exists(nuitka_bin):
-        return os.path.abspath(nuitka_bin)
+def is_frozen_exe():
+    """Kiểm tra chắc chắn ứng dụng đang chạy dưới dạng file .exe độc lập hay script python."""
+    if getattr(sys, "frozen", False):
+        return True
+    if bool(os.environ.get("NUITKA_ONEFILE_BINARY")):
+        return True
+    if hasattr(sys, "__nuitka_version__") or "__compiled__" in globals():
+        return True
+    base_exe = os.path.basename(sys.executable).lower()
+    if base_exe.endswith(".exe") and not (base_exe.startswith("python") or base_exe == "python.exe" or base_exe == "pythonw.exe"):
+        return True
+    return False
 
-    # 2. Nếu đang chạy bằng python script (.py) khi lập trình
-    if not getattr(sys, "frozen", False):
-        return sys.executable
+def is_nuitka_temp_dir(p):
+    """Kiểm tra xem đường dẫn có nằm trong thư mục tạm giải nén của Nuitka/PyInstaller hay không."""
+    if not p:
+        return False
+    p_norm = os.path.normcase(os.path.abspath(p))
+    if "onefil" in p_norm:
+        return True
+    for env_var in ["TEMP", "TMP"]:
+        t_dir = os.environ.get(env_var)
+        if t_dir:
+            t_norm = os.path.normcase(os.path.abspath(t_dir))
+            if p_norm.startswith(t_norm + os.sep) or p_norm == t_norm:
+                return True
+    if "\\appdata\\local\\temp\\" in p_norm:
+        return True
+    return False
 
-    # 3. Khi chạy EXE đóng gói: tìm tool_ads_ui.exe thực tế trong thư mục làm việc
-    for cand in [
-        os.path.abspath("tool_ads_ui.exe"),
-        os.path.join(os.path.dirname(os.path.abspath(sys.argv[0] if sys.argv else ".")), "tool_ads_ui.exe")
-    ]:
-        if os.path.exists(cand):
-            return cand
-
-    if sys.argv and sys.argv[0] and sys.argv[0].lower().endswith(".exe") and os.path.exists(sys.argv[0]):
-        return os.path.abspath(sys.argv[0])
-
-    if sys.executable:
-        exe_low = sys.executable.lower()
-        if "onefil" not in exe_low and "temp" not in exe_low and os.path.exists(sys.executable):
-            return os.path.abspath(sys.executable)
-
-    return sys.executable
+def is_temp_path(p):
+    return is_nuitka_temp_dir(p)
 
 def get_real_app_dir():
-    """Lấy thư mục làm việc thực sự của tool (nơi chứa tool_ads_ui.exe hoặc tool_ads_ui.py)."""
+    """Lấy thư mục làm việc thực sự của tool (nơi chứa tool_ads_ui.exe hoặc tool_ads_ui.py). Tuyệt đối không lấy Temp."""
+    # 1. Nuitka onefile binary directory
     nuitka_bin = os.environ.get("NUITKA_ONEFILE_BINARY")
-    if nuitka_bin and os.path.exists(nuitka_bin):
+    if nuitka_bin and not is_nuitka_temp_dir(nuitka_bin):
         return os.path.dirname(os.path.abspath(nuitka_bin))
 
-    if not getattr(sys, "frozen", False):
-        try:
-            return os.path.dirname(os.path.abspath(__file__))
-        except:
-            return os.path.abspath(".")
+    # 2. Thư mục chứa sys.argv[0] nếu không phải Temp
+    if sys.argv and sys.argv[0]:
+        argv_p = os.path.abspath(sys.argv[0])
+        if not is_nuitka_temp_dir(argv_p):
+            return os.path.dirname(argv_p)
 
-    exe_p = get_real_exe_path()
-    if exe_p and os.path.exists(exe_p) and exe_p.lower().endswith(".exe"):
-        return os.path.dirname(os.path.abspath(exe_p))
+    # 3. Thư mục hiện tại nếu không phải Temp
+    try:
+        cwd = os.path.abspath(".")
+        if not is_nuitka_temp_dir(cwd):
+            return cwd
+    except Exception:
+        pass
+
+    # 4. Thư mục chứa file mã nguồn (__file__) nếu không phải Temp
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        if not is_nuitka_temp_dir(script_dir):
+            return script_dir
+    except Exception:
+        pass
 
     return os.path.abspath(".")
+
+def get_real_exe_path():
+    """Lấy chính xác đường dẫn file exe thực sự của người dùng, TUYỆT ĐỐI KHÔNG lấy file tạm trong Temp."""
+    app_dir = get_real_app_dir()
+
+    # 1. Nuitka binary nếu có và không phải temp
+    nuitka_bin = os.environ.get("NUITKA_ONEFILE_BINARY")
+    if nuitka_bin and os.path.exists(nuitka_bin) and not is_nuitka_temp_dir(nuitka_bin):
+        return os.path.abspath(nuitka_bin)
+
+    # 2. Tìm file tool_ads_ui.exe trong app_dir
+    cand = os.path.join(app_dir, "tool_ads_ui.exe")
+    if os.path.exists(cand):
+        return cand
+
+    # 3. Tìm file .exe bất kỳ trong app_dir (nếu người dùng đổi tên tool)
+    try:
+        for f in os.listdir(app_dir):
+            if f.lower().endswith(".exe") and not f.lower().startswith("updater") and not f.lower().startswith("restart"):
+                return os.path.join(app_dir, f)
+    except Exception:
+        pass
+
+    # 4. Kiểm tra sys.argv[0] nếu là exe và không trong temp
+    if sys.argv and sys.argv[0] and sys.argv[0].lower().endswith(".exe") and not is_nuitka_temp_dir(sys.argv[0]):
+        if os.path.exists(sys.argv[0]):
+            return os.path.abspath(sys.argv[0])
+
+    # 5. Nếu đang chạy bằng python script thuần (môi trường dev)
+    if not is_frozen_exe():
+        return "python"
+
+    return os.path.join(app_dir, "tool_ads_ui.exe")
 
 def play_money_ting_ting():
     """Phát âm thanh chuông 'ting ting' chuyển tiền nhận thông báo."""
@@ -941,7 +991,7 @@ class UpdateDialog(ctk.CTkToplevel):
         """Tự động đóng AdsPower, thoát tool và khởi động lại với bản mới (1-Click, không cần bấm thêm nút)."""
         self.progress_bar.set(1.0)
         self.lbl_progress.configure(
-            text="🎉 Đã tải và cài đặt xong! Đang tắt AdsPower & tự khởi động lại...",
+            text="🎉 Đã cập nhật xong! Đang tắt AdsPower & tự khởi động lại...",
             text_color="#27AE60"
         )
         self.btn_action.configure(
@@ -955,7 +1005,7 @@ class UpdateDialog(ctk.CTkToplevel):
         except: pass
 
         def _do_restart():
-            time.sleep(1.2)
+            time.sleep(1.0)
             # 1. Tắt app AdsPower triệt để
             try:
                 subprocess.call('taskkill /F /IM "AdsPower Global.exe" /IM "AdsPower Browser.exe" >nul 2>&1', shell=True)
@@ -964,42 +1014,47 @@ class UpdateDialog(ctk.CTkToplevel):
             # 2. Lấy đường dẫn exe thật (KHÔNG lấy Temp python.exe của Nuitka)
             real_exe = get_real_exe_path()
             app_dir = get_real_app_dir()
-            current_pid = os.getpid()
 
             restart_bat = os.path.join(tempfile.gettempdir(), f"restart_tool_{int(time.time())}.bat")
             
-            if real_exe.lower().endswith(".exe"):
-                launch_cmd = f'start "" "{real_exe}"'
+            # Xây dựng lệnh khởi chạy chính xác 100%
+            if is_frozen_exe() or real_exe.lower().endswith(".exe"):
+                launch_cmd = f'start "" /d "{app_dir}" "{real_exe}"'
             else:
-                py_exe = sys.executable if not ("temp" in sys.executable.lower() or "onefil" in sys.executable.lower()) else "python"
-                launch_cmd = f'start "" "{py_exe}" "tool_ads_ui.py"'
+                py_path = sys.executable if not is_nuitka_temp_dir(sys.executable) else "python"
+                launch_cmd = f'start "" /d "{app_dir}" "{py_path}" "tool_ads_ui.py"'
 
             bat_content = f"""@echo off
 chcp 65001 >nul
-:: Dong AdsPower
+title Auto AdsPower - Dang khoi dong lai...
+
+:: 1. Tat AdsPower
 taskkill /F /IM "AdsPower Global.exe" /IM "AdsPower Browser.exe" >nul 2>&1
-:: Doi tool cu thoat hoan toan
-timeout /t 1 /nobreak >nul
-taskkill /F /PID {current_pid} >nul 2>&1
-:: Chuyen vao thu muc tool va khoi dong ban moi
+
+:: 2. Cho 2.5 giay de tool cu thoat han va he thong giai phong bo nho
+ping 127.0.0.1 -n 3 >nul
+
+:: 3. Chuyen vao thu muc chua app va bat lai ban moi
 cd /d "{app_dir}"
 {launch_cmd}
-timeout /t 2 /nobreak >nul
-del "%~f0" >nul 2>&1
+
+:: 4. Cho 2 giay de dam bao tien trinh moi da chay roi tu dong xoa file bat nay
+ping 127.0.0.1 -n 3 >nul
+(goto) 2>nul & del "%~f0"
 """
             try:
                 with open(restart_bat, "w", encoding="utf-8") as bf:
                     bf.write(bat_content)
 
-                DETACHED_PROCESS = 0x00000008
+                # Chạy cmd độc lập hoàn toàn với process group riêng và không popup cửa sổ đen
                 subprocess.Popen(
-                    ["cmd.exe", "/c", restart_bat],
-                    creationflags=DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-                    close_fds=True
+                    f'cmd.exe /c "{restart_bat}"',
+                    shell=True,
+                    creationflags=0x08000000 | subprocess.CREATE_NEW_PROCESS_GROUP
                 )
             except Exception:
                 try:
-                    subprocess.Popen([real_exe] if real_exe.lower().endswith(".exe") else [sys.executable, "tool_ads_ui.py"])
+                    os.startfile(restart_bat)
                 except Exception:
                     pass
 
@@ -1034,10 +1089,9 @@ del "%~f0" >nul 2>&1
         except: pass
 
         def _do_exe_update():
-            time.sleep(1.2)
+            time.sleep(1.0)
             real_exe = get_real_exe_path()
             app_dir = get_real_app_dir()
-            current_pid = os.getpid()
 
             # Tắt AdsPower trước
             try:
@@ -1047,25 +1101,24 @@ del "%~f0" >nul 2>&1
             updater_bat = os.path.join(tempfile.gettempdir(), f"updater_{int(time.time())}.bat")
             bat_content = f"""@echo off
 chcp 65001 >nul
-title Auto Updater - Dang cap nhat...
-echo ========================================================
-echo DANG CAP NHAT TOOL LEN PHIEN BAN MOI...
-echo Vui long cho trong giay lat...
-echo ========================================================
-taskkill /F /IM "AdsPower Global.exe" /IM "AdsPower Browser.exe" >nul 2>&1
-timeout /t 1 /nobreak >nul
-taskkill /F /PID {current_pid} >nul 2>&1
-timeout /t 1 /nobreak >nul
+title Auto Updater - Dang cap nhat ban moi...
 
+:: 1. Tat AdsPower
+taskkill /F /IM "AdsPower Global.exe" /IM "AdsPower Browser.exe" >nul 2>&1
+
+:: 2. Cho 2.5 giay de tool cu thoat han
+ping 127.0.0.1 -n 3 >nul
+
+:: 3. Thay the file exe an toan bang co che rename (Windows luon cho phep rename)
 set "TARGET={real_exe}"
 set "NEW={temp_file}"
+set "BAK={real_exe}.bak"
 
-:wait_loop
-taskkill /f /im tool_ads_ui.exe >nul 2>&1
-timeout /t 1 /nobreak >nul
-del "%TARGET%" >nul 2>&1
+if exist "%BAK%" del /f /q "%BAK%" >nul 2>&1
+ren "%TARGET%" "%~nx0.bak" >nul 2>&1
 if exist "%TARGET%" (
-    goto wait_loop
+    ping 127.0.0.1 -n 2 >nul
+    ren "%TARGET%" "tool_old.bak" >nul 2>&1
 )
 
 move /y "%NEW%" "%TARGET%" >nul 2>&1
@@ -1073,21 +1126,24 @@ if not exist "%TARGET%" (
     copy /y "%NEW%" "%TARGET%" >nul 2>&1
 )
 
+:: 4. Chuyen vao thu muc tool va khoi dong lai
 cd /d "{app_dir}"
-echo Khoi dong lai tool phien ban moi...
-start "" "%TARGET%"
-timeout /t 2 /nobreak >nul
-del "%~f0" >nul 2>&1
+start "" /d "{app_dir}" "%TARGET%"
+
+:: 5. Don dep va tu xoa
+ping 127.0.0.1 -n 3 >nul
+if exist "%BAK%" del /f /q "%BAK%" >nul 2>&1
+if exist "tool_old.bak" del /f /q "tool_old.bak" >nul 2>&1
+(goto) 2>nul & del "%~f0"
 """
             try:
                 with open(updater_bat, "w", encoding="utf-8") as bf:
                     bf.write(bat_content)
 
-                DETACHED_PROCESS = 0x00000008
                 subprocess.Popen(
-                    ["cmd.exe", "/c", updater_bat],
-                    creationflags=DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-                    close_fds=True
+                    f'cmd.exe /c "{updater_bat}"',
+                    shell=True,
+                    creationflags=0x08000000 | subprocess.CREATE_NEW_PROCESS_GROUP
                 )
                 time.sleep(0.3)
                 os._exit(0)
