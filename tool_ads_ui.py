@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "1.1.3"
+CURRENT_VERSION = "10.0.0"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -701,7 +701,7 @@ def is_newer_version(latest_str, current_str):
         l_parts = parse_v(latest_str)
         c_parts = parse_v(current_str)
         if not l_parts or not c_parts:
-            return False
+            return str(latest_str).strip() != str(current_str).strip()
         max_len = max(len(l_parts), len(c_parts))
         l_parts += [0] * (max_len - len(l_parts))
         c_parts += [0] * (max_len - len(c_parts))
@@ -848,7 +848,7 @@ class UpdateDialog(ctk.CTkToplevel):
         else:
             badge_text = "● BẢN MỚI NHẤT"
             badge_color = "#27AE60"
-            status_text = f"✅ Bạn đang dùng phiên bản mới nhất (v{latest_ver})"
+            status_text = f"✅ Bạn đang dùng phiên bản mới nhất (v{self.current_version})"
 
         ctk.CTkLabel(
             v_row, text=badge_text,
