@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "1.0.1"
+CURRENT_VERSION = "1.0.2"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -583,12 +583,12 @@ class UpdateDialog(ctk.CTkToplevel):
         self.downloading = False
 
         self.title("🔔 Trung Tâm Cập Nhật - Auto AdsPower")
-        width, height = 550, 490
+        width, height = 560, 530
         target = get_target_monitor_rect(width, height)
         x = int(target["left"] + (target["width"] / 2) - (width / 2))
         y = int(target["top"] + (target["height"] / 2) - (height / 2))
         self.geometry(f"{width}x{height}+{x}+{y}")
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.configure(fg_color="#F8F3F5")
         self.attributes("-topmost", True)
 
@@ -601,9 +601,65 @@ class UpdateDialog(ctk.CTkToplevel):
         self.has_new = has_new
         self.latest_ver = latest_ver
 
-        # Header
+        # Nút bấm hành động (Neo chặt ở ĐÁY cửa sổ, luôn luôn hiển thị 100%)
+        self.btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.btn_frame.pack(side="bottom", fill="x", padx=20, pady=(8, 15))
+
+        if has_new:
+            self.btn_action = ctk.CTkButton(
+                self.btn_frame, text="🚀 TẢI & TỰ ĐỘNG CẬP NHẬT NGAY", height=40,
+                font=ctk.CTkFont(family="Arial", size=13, weight="bold"),
+                fg_color="#27AE60", hover_color="#219653", text_color="#FFFFFF",
+                command=self.start_download_update
+            )
+            self.btn_action.pack(side="left", expand=True, fill="x", padx=(0, 10))
+
+            self.btn_cancel = ctk.CTkButton(
+                self.btn_frame, text="Để sau", height=40, width=90,
+                font=ctk.CTkFont(family="Arial", size=13),
+                fg_color="#D5DBDB", hover_color="#BDC3C7", text_color="#333333",
+                command=self.destroy
+            )
+            self.btn_cancel.pack(side="right")
+        else:
+            self.btn_action = ctk.CTkButton(
+                self.btn_frame, text="🔄 Kiểm tra lại", height=40,
+                font=ctk.CTkFont(family="Arial", size=13, weight="bold"),
+                fg_color="#B85C7B", hover_color="#9C4765", text_color="#FFFFFF",
+                command=self.recheck_update
+            )
+            self.btn_action.pack(side="left", expand=True, fill="x", padx=(0, 10))
+
+            self.btn_cancel = ctk.CTkButton(
+                self.btn_frame, text="Đóng", height=40, width=90,
+                font=ctk.CTkFont(family="Arial", size=13),
+                fg_color="#D5DBDB", hover_color="#BDC3C7", text_color="#333333",
+                command=self.destroy
+            )
+            self.btn_cancel.pack(side="right")
+
+        # Khung Progress (Neo ngay trên nút bấm)
+        self.progress_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.progress_frame.pack(side="bottom", fill="x", padx=20, pady=(0, 5))
+
+        self.lbl_progress = ctk.CTkLabel(
+            self.progress_frame, text="",
+            font=ctk.CTkFont(family="Arial", size=12, weight="bold"), text_color="#555555"
+        )
+        self.lbl_progress.pack(anchor="w", pady=(0, 2))
+
+        self.progress_bar = ctk.CTkProgressBar(
+            self.progress_frame, height=12, corner_radius=6,
+            progress_color="#27AE60", fg_color="#E0E0E0"
+        )
+        self.progress_bar.set(0)
+        self.progress_bar.pack(fill="x")
+        self.progress_bar.pack_forget()
+        self.lbl_progress.pack_forget()
+
+        # Header (Trên cùng)
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.pack(pady=(16, 8), fill="x", padx=20)
+        header_frame.pack(side="top", pady=(14, 6), fill="x", padx=20)
 
         ctk.CTkLabel(
             header_frame, text="🔔 TRUNG TÂM CẬP NHẬT PHẦN MỀM",
@@ -612,7 +668,7 @@ class UpdateDialog(ctk.CTkToplevel):
 
         # Thẻ thông tin phiên bản
         info_card = ctk.CTkFrame(self, fg_color="#FFFFFF", corner_radius=10, border_width=1, border_color="#E0C8D0")
-        info_card.pack(fill="x", padx=20, pady=5)
+        info_card.pack(side="top", fill="x", padx=20, pady=5)
 
         v_row = ctk.CTkFrame(info_card, fg_color="transparent")
         v_row.pack(fill="x", padx=15, pady=8)
@@ -642,11 +698,11 @@ class UpdateDialog(ctk.CTkToplevel):
             text_color="#B85C7B" if has_new else "#27AE60"
         ).pack(anchor="w", padx=15, pady=(0, 10))
 
-        # Khung Changelog
+        # Khung Changelog (Giữa màn hình, tự động lấp đầy khoảng trống)
         ctk.CTkLabel(
             self, text="📝 Nội dung & tính năng mới:",
             font=ctk.CTkFont(family="Arial", size=12, weight="bold"), text_color="#4A4A4A"
-        ).pack(anchor="w", padx=25, pady=(8, 2))
+        ).pack(side="top", anchor="w", padx=25, pady=(6, 2))
 
         changelog_text = self.update_info.get("changelog") or ""
         if not changelog_text:
@@ -656,68 +712,12 @@ class UpdateDialog(ctk.CTkToplevel):
                 changelog_text = "Bạn đang sử dụng phiên bản phần mềm mới nhất!\nHệ thống luôn đảm bảo mọi tính năng hoạt động ổn định và mượt mà."
 
         self.txt_changelog = ctk.CTkTextbox(
-            self, height=125, corner_radius=8, fg_color="#FFFFFF", text_color="#333333",
+            self, height=100, corner_radius=8, fg_color="#FFFFFF", text_color="#333333",
             border_width=1, border_color="#E0C8D0", font=ctk.CTkFont(family="Arial", size=12)
         )
-        self.txt_changelog.pack(fill="x", padx=20, pady=5)
+        self.txt_changelog.pack(side="top", fill="both", expand=True, padx=20, pady=(2, 8))
         self.txt_changelog.insert("1.0", changelog_text)
         self.txt_changelog.configure(state="disabled")
-
-        # Khung Progress
-        self.progress_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.progress_frame.pack(fill="x", padx=20, pady=5)
-
-        self.lbl_progress = ctk.CTkLabel(
-            self.progress_frame, text="",
-            font=ctk.CTkFont(family="Arial", size=12, weight="bold"), text_color="#555555"
-        )
-        self.lbl_progress.pack(anchor="w", pady=(0, 2))
-
-        self.progress_bar = ctk.CTkProgressBar(
-            self.progress_frame, height=12, corner_radius=6,
-            progress_color="#27AE60", fg_color="#E0E0E0"
-        )
-        self.progress_bar.set(0)
-        self.progress_bar.pack(fill="x")
-        self.progress_bar.pack_forget()
-        self.lbl_progress.pack_forget()
-
-        # Nút bấm hành động
-        self.btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.btn_frame.pack(fill="x", padx=20, pady=(10, 15))
-
-        if has_new:
-            self.btn_action = ctk.CTkButton(
-                self.btn_frame, text="🚀 TẢI & TỰ ĐỘNG CẬP NHẬT NGAY", height=38,
-                font=ctk.CTkFont(family="Arial", size=13, weight="bold"),
-                fg_color="#27AE60", hover_color="#219653", text_color="#FFFFFF",
-                command=self.start_download_update
-            )
-            self.btn_action.pack(side="left", expand=True, fill="x", padx=(0, 10))
-
-            self.btn_cancel = ctk.CTkButton(
-                self.btn_frame, text="Để sau", height=38, width=90,
-                font=ctk.CTkFont(family="Arial", size=13),
-                fg_color="#D5DBDB", hover_color="#BDC3C7", text_color="#333333",
-                command=self.destroy
-            )
-            self.btn_cancel.pack(side="right")
-        else:
-            self.btn_action = ctk.CTkButton(
-                self.btn_frame, text="🔄 Kiểm tra lại", height=38,
-                font=ctk.CTkFont(family="Arial", size=13, weight="bold"),
-                fg_color="#B85C7B", hover_color="#9C4765", text_color="#FFFFFF",
-                command=self.recheck_update
-            )
-            self.btn_action.pack(side="left", expand=True, fill="x", padx=(0, 10))
-
-            self.btn_cancel = ctk.CTkButton(
-                self.btn_frame, text="Đóng", height=38, width=90,
-                font=ctk.CTkFont(family="Arial", size=13),
-                fg_color="#D5DBDB", hover_color="#BDC3C7", text_color="#333333",
-                command=self.destroy
-            )
-            self.btn_cancel.pack(side="right")
 
     def recheck_update(self):
         self.btn_action.configure(state="disabled", text="⏳ Đang kiểm tra...")
@@ -791,7 +791,12 @@ class UpdateDialog(ctk.CTkToplevel):
             is_hot_update = download_url.endswith(".py") or "tool_ads_ui.py" in download_url
             if is_hot_update:
                 import shutil
-                shutil.copy2(temp_file, "app_update.py")
+                base_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+                patch_path = os.path.join(base_dir, "app_update.py")
+                shutil.copy2(temp_file, patch_path)
+                try:
+                    shutil.copy2(temp_file, "app_update.py")
+                except: pass
                 self.after(0, self._apply_hot_update)
                 return
 
@@ -907,7 +912,7 @@ class AutoAdsPowerGUI:
         except: pass
 
         top_header_frame = ctk.CTkFrame(root, fg_color="transparent")
-        top_header_frame.pack(pady=(10, 6), padx=25, fill="x")
+        top_header_frame.pack(pady=(10, 6), padx=(150, 25), fill="x")
         
 
         title_lbl = ctk.CTkLabel(
@@ -1053,6 +1058,10 @@ class AutoAdsPowerGUI:
                     bg.angle = item.get("angle", 0)
                     bg.update_image()
                     bg.lock() 
+                    if item.get("file") == "img2.png":
+                        try:
+                            bg.label.lift(top_header_frame)
+                        except: pass
                     self.bg_images.append(bg)
                 self.log_msg("HỆ THỐNG", "✨ Đã load thành công giao diện Custom từ file config!")
             except: self._load_default_bgs()
@@ -1065,9 +1074,20 @@ class AutoAdsPowerGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self._start_falling_hearts()
 
-        # Khởi chạy kiểm tra cập nhật ngầm sau 2.5 giây
+        # Khởi chạy kiểm tra cập nhật ngầm định kỳ (kể cả khi đang mở tool)
         self.update_info = None
-        self.root.after(2500, lambda: threading.Thread(target=self.check_update_silent, daemon=True).start())
+        self._start_update_loop()
+
+    def _start_update_loop(self):
+        def _loop():
+            time.sleep(2)
+            while getattr(self, "root", None) and self.root.winfo_exists():
+                self.check_update_silent()
+                for _ in range(45):
+                    if not (getattr(self, "root", None) and self.root.winfo_exists()):
+                        return
+                    time.sleep(1)
+        threading.Thread(target=_loop, daemon=True).start()
 
     def check_update_silent(self):
         try:
@@ -5393,6 +5413,10 @@ class AutoAdsPowerGUI:
         for img in img_files:
             bg = DraggableBackground(self.root, img, x=start_x, y=50, size=150)
             bg.lock()
+            if img == "img2.png":
+                try:
+                    bg.label.lift()
+                except: pass
             self.bg_images.append(bg)
             start_x += 200
 
@@ -6585,7 +6609,10 @@ class AutoAdsPowerGUI:
 import importlib.util
 
 def load_patched_gui():
-    patch_file = "app_update.py"
+    base_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    patch_file = os.path.join(base_dir, "app_update.py")
+    if not os.path.exists(patch_file) and os.path.exists("app_update.py"):
+        patch_file = "app_update.py"
     if os.path.exists(patch_file):
         try:
             spec = importlib.util.spec_from_file_location("app_update", patch_file)
