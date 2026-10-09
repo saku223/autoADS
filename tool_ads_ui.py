@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "5"
+CURRENT_VERSION = "6"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -176,38 +176,44 @@ def play_money_ting_ting():
 
 # ================= HÀM XỬ LÝ ĐƯỜNG DẪN ẢNH TRONG EXE =================
 def resource_path(relative_path):
+    """Tìm đường dẫn tài nguyên (ảnh, icon, config) trong mọi môi trường (Nuitka, PyInstaller, Python script)."""
+    candidates = []
+
     # 1. Thư mục giải nén tạm thời của Nuitka onefile
     nuitka_dir = os.environ.get("NUITKA_ONEFILE_DIRECTORY")
     if nuitka_dir:
-        cand = os.path.join(nuitka_dir, relative_path)
-        if os.path.exists(cand):
-            return cand
+        candidates.append(os.path.join(nuitka_dir, relative_path))
 
     # 2. Thư mục giải nén tạm thời của PyInstaller
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
-        cand = os.path.join(meipass, relative_path)
-        if os.path.exists(cand):
-            return cand
+        candidates.append(os.path.join(meipass, relative_path))
 
-    # 3. Thư mục thật của ứng dụng
-    app_dir = get_real_app_dir()
-    cand = os.path.join(app_dir, relative_path)
-    if os.path.exists(cand):
-        return cand
+    # 3. Thư mục giải nén tạm của Python/Nuitka (Nơi Nuitka onefile giải nén img1.png, img2.png, img3.png)
+    if sys.executable:
+        candidates.append(os.path.join(os.path.dirname(sys.executable), relative_path))
 
-    # 4. Thư mục file mã nguồn hiện tại (__file__)
+    # 4. Thư mục thật của ứng dụng (nơi đặt file exe người dùng)
     try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        cand = os.path.join(script_dir, relative_path)
-        if os.path.exists(cand):
-            return cand
+        app_dir = get_real_app_dir()
+        if app_dir:
+            candidates.append(os.path.join(app_dir, relative_path))
     except: pass
 
-    # 5. Thư mục làm việc hiện tại (CWD)
-    cand = os.path.abspath(relative_path)
-    if os.path.exists(cand):
-        return cand
+    # 5. Thư mục file mã nguồn hiện tại (__file__)
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates.append(os.path.join(script_dir, relative_path))
+    except: pass
+
+    # 6. Thư mục làm việc hiện tại (CWD)
+    try:
+        candidates.append(os.path.abspath(relative_path))
+    except: pass
+
+    for cand in candidates:
+        if cand and os.path.exists(cand):
+            return cand
 
     return relative_path
 
@@ -273,6 +279,17 @@ class DraggableBackground:
 
         try:
             real_path = resource_path(image_path)
+            if not os.path.exists(real_path):
+                for folder in [
+                    os.environ.get("NUITKA_ONEFILE_DIRECTORY", ""),
+                    os.path.dirname(sys.executable) if sys.executable else "",
+                    get_real_app_dir(),
+                    os.path.abspath(".")
+                ]:
+                    cand = os.path.join(folder, image_path) if folder else ""
+                    if cand and os.path.exists(cand):
+                        real_path = cand
+                        break
             self.original_image = Image.open(real_path)
             if self.original_image.mode != 'RGBA':
                 self.original_image = self.original_image.convert('RGBA')
@@ -1268,6 +1285,9 @@ class AutoAdsPowerGUI:
                 self._load_default_bgs()
         else:
             self._load_default_bgs()
+
+        if not self.bg_images:
+            self._load_default_bgs()
             
         threading.Thread(target=lambda: self.auto_start_adspower(is_auto=True), daemon=True).start()
         threading.Thread(target=self.poll_telegram_updates, daemon=True).start()
@@ -1434,6 +1454,17 @@ class AutoAdsPowerGUI:
         )
         self._heart_canvas.place(x=0, y=0, width=W, height=H)
         self._heart_canvas.tk.call('lower', self._heart_canvas._w)
+
+        # Đảm bảo tất cả các ảnh gấu luôn nằm trên canvas trái tim rơi (không bao giờ bị che)
+        for bg in getattr(self, "bg_images", []):
+            if hasattr(bg, "label") and bg.label:
+                try: bg.label.lift(self._heart_canvas)
+                except: pass
+        # Riêng gấu img2 (thò đầu trên tiêu đề) luôn được nâng lên lớp cao nhất
+        for bg in getattr(self, "bg_images", []):
+            if getattr(bg, "image_path", "") == "img2.png" and hasattr(bg, "label") and bg.label:
+                try: bg.label.lift()
+                except: pass
 
         self._falling_hearts = []
         heart_colors = ["#F4B8C8", "#E88FAC", "#F9D0DA", "#D4799A", "#FADADD", "#C75B8A"]
@@ -6889,10 +6920,19 @@ def load_patched_gui():
             spec = importlib.util.spec_from_file_location("app_update", patch_file)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
-            if hasattr(mod, "AutoAdsPowerGUI"):
-                return mod.AutoAdsPowerGUI
+            patch_ver = getattr(mod, "CURRENT_VERSION", "0")
+            # CHỈ NẠP BẢN PATCH NẾU NÓ THỰC SỰ MỚI HƠN BẢN HIỆN TẠI!
+            if is_newer_version(patch_ver, CURRENT_VERSION):
+                if hasattr(mod, "AutoAdsPowerGUI"):
+                    return mod.AutoAdsPowerGUI
+            else:
+                # File patch cũ hơn hoặc bằng bản hiện tại -> Xóa bỏ để chạy code mới nhất của tool
+                try: os.remove(patch_file)
+                except: pass
         except Exception as e:
             print(f"[!] Lỗi nạp bản vá hot-update: {e}")
+            try: os.remove(patch_file)
+            except: pass
     return None
 
 def start_main_app(app):
