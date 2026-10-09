@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "8"
+CURRENT_VERSION = "9"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -208,20 +208,91 @@ def get_real_exe_path():
     return os.path.join(app_dir, "tool_ads_ui.exe")
 
 def play_money_ting_ting():
-    """Phát âm thanh chuông 'ting ting' chuyển tiền nhận thông báo."""
+    """Phát âm thanh chuông 'ting ting' chuyển tiền nhận thông báo chuẩn Windows (100% qua loa ngoài/tai nghe)."""
     def _run():
+        import winsound
+        import tempfile
+        import wave
+        import struct
+        import math
+        
+        # 1. Tạo và phát file âm thanh WAV ting-ting tiếng chuông ngân vàng (như app ngân hàng)
+        wav_path = os.path.join(tempfile.gettempdir(), "ting_money_bell.wav")
         try:
-            import winsound
-            # Ting ting - 2 nốt ngân vang vui tai như chuông báo nhận tiền ngân hàng
-            winsound.Beep(1760, 110) # Nốt Ting 1 (A6)
-            time.sleep(0.04)
-            winsound.Beep(2637, 280) # Nốt Ting 2 (E7)
+            if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1000:
+                sample_rate = 44100
+                total_samples = int(sample_rate * 0.65)
+                f1 = 2093.0 # Nốt Ting 1 (C7)
+                f2 = 2793.8 # Nốt Ting 2 (F7)
+                
+                with wave.open(wav_path, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(sample_rate)
+                    frames = bytearray()
+                    for i in range(total_samples):
+                        t = i / sample_rate
+                        sample = 0.0
+                        if t < 0.38:
+                            t1 = t
+                            env1 = math.exp(-14.0 * t1)
+                            s1 = (math.sin(2 * math.pi * f1 * t1) +
+                                  0.4 * math.sin(2 * math.pi * f1 * 2 * t1) +
+                                  0.15 * math.sin(2 * math.pi * f1 * 3 * t1)) * env1
+                            sample += s1
+                        if t >= 0.15:
+                            t2 = t - 0.15
+                            env2 = math.exp(-9.0 * t2)
+                            s2 = (math.sin(2 * math.pi * f2 * t2) +
+                                  0.45 * math.sin(2 * math.pi * f2 * 2 * t2) +
+                                  0.2 * math.sin(2 * math.pi * f2 * 3 * t2)) * env2
+                            sample += s2 * 1.25
+                        val = max(-1.0, min(1.0, sample * 0.85))
+                        frames.extend(struct.pack("<h", int(val * 32767.0)))
+                    wf.writeframes(frames)
+                    
+            if os.path.exists(wav_path):
+                winsound.PlaySound(wav_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                return
         except Exception:
-            try:
-                import winsound
-                winsound.MessageBeep(winsound.MB_ICONASTERISK)
-            except Exception:
-                pass
+            pass
+
+        # 2. Fallback 1: Các file âm thanh thông báo chuẩn của Windows
+        windows_media_sounds = [
+            r"C:\Windows\Media\Windows Notify Messaging.wav",
+            r"C:\Windows\Media\Windows Notify System Generic.wav",
+            r"C:\Windows\Media\chimes.wav",
+            r"C:\Windows\Media\Windows Ding.wav",
+            r"C:\Windows\Media\notify.wav",
+        ]
+        for snd in windows_media_sounds:
+            if os.path.exists(snd):
+                try:
+                    winsound.PlaySound(snd, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                    return
+                except Exception:
+                    pass
+
+        # 3. Fallback 2: System Alias hoặc MessageBeep
+        try:
+            winsound.PlaySound("Notification.Default", winsound.SND_ALIAS | winsound.SND_ASYNC)
+            return
+        except Exception:
+            pass
+
+        try:
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        except Exception:
+            pass
+
+        # 4. Fallback 3: Hardware Beep
+        try:
+            winsound.Beep(2093, 120)
+            _original_sleep(0.04)
+            winsound.Beep(2793, 260)
+        except Exception:
+            pass
+
     threading.Thread(target=_run, daemon=True).start()
 
 # ================= HÀM XỬ LÝ ĐƯỜNG DẪN ẢNH TRONG EXE =================
@@ -764,6 +835,8 @@ class UpdateDialog(ctk.CTkToplevel):
         has_new = is_newer_version(latest_ver, self.current_version)
         self.has_new = has_new
         self.latest_ver = latest_ver
+        if has_new:
+            play_money_ting_ting()
 
         # Nút bấm hành động (Neo chặt ở ĐÁY cửa sổ, luôn luôn hiển thị 100%)
         self.btn_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -828,7 +901,14 @@ class UpdateDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             header_frame, text="🔔 TRUNG TÂM CẬP NHẬT PHẦN MỀM",
             font=ctk.CTkFont(family="Arial", size=18, weight="bold"), text_color="#B85C7B"
-        ).pack()
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            header_frame, text="🔊 Thử chuông", width=100, height=28,
+            font=ctk.CTkFont(family="Arial", size=11, weight="bold"),
+            fg_color="#FADBD8", hover_color="#F5B7B1", text_color="#B85C7B",
+            corner_radius=14, command=play_money_ting_ting
+        ).pack(side="right")
 
         # Thẻ thông tin phiên bản
         info_card = ctk.CTkFrame(self, fg_color="#FFFFFF", corner_radius=10, border_width=1, border_color="#E0C8D0")
@@ -890,6 +970,9 @@ class UpdateDialog(ctk.CTkToplevel):
                 upd = self.on_check_again()
                 if upd:
                     self.update_info = upd
+                    l_v = upd.get("version") or upd.get("latest_version")
+                    if l_v and is_newer_version(l_v, self.current_version):
+                        play_money_ting_ting()
             self.after(500, self._refresh_ui)
         threading.Thread(target=_task, daemon=True).start()
 
