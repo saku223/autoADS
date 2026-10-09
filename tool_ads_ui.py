@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "1.1.0"
+CURRENT_VERSION = "1.1.1"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -208,92 +208,7 @@ def get_real_exe_path():
     return os.path.join(app_dir, "tool_ads_ui.exe")
 
 def play_money_ting_ting():
-    """Phát âm thanh chuông 'ting ting' chuyển tiền nhận thông báo chuẩn Windows (100% qua loa ngoài/tai nghe)."""
-    def _run():
-        import winsound
-        import tempfile
-        import wave
-        import struct
-        import math
-        
-        # 1. Tạo và phát file âm thanh WAV ting-ting tiếng chuông ngân vàng (như app ngân hàng)
-        wav_path = os.path.join(tempfile.gettempdir(), "ting_money_bell.wav")
-        try:
-            if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1000:
-                sample_rate = 44100
-                total_samples = int(sample_rate * 0.65)
-                f1 = 2093.0 # Nốt Ting 1 (C7)
-                f2 = 2793.8 # Nốt Ting 2 (F7)
-                
-                with wave.open(wav_path, "wb") as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2)
-                    wf.setframerate(sample_rate)
-                    frames = bytearray()
-                    for i in range(total_samples):
-                        t = i / sample_rate
-                        sample = 0.0
-                        if t < 0.38:
-                            t1 = t
-                            env1 = math.exp(-14.0 * t1)
-                            s1 = (math.sin(2 * math.pi * f1 * t1) +
-                                  0.4 * math.sin(2 * math.pi * f1 * 2 * t1) +
-                                  0.15 * math.sin(2 * math.pi * f1 * 3 * t1)) * env1
-                            sample += s1
-                        if t >= 0.15:
-                            t2 = t - 0.15
-                            env2 = math.exp(-9.0 * t2)
-                            s2 = (math.sin(2 * math.pi * f2 * t2) +
-                                  0.45 * math.sin(2 * math.pi * f2 * 2 * t2) +
-                                  0.2 * math.sin(2 * math.pi * f2 * 3 * t2)) * env2
-                            sample += s2 * 1.25
-                        val = max(-1.0, min(1.0, sample * 0.85))
-                        frames.extend(struct.pack("<h", int(val * 32767.0)))
-                    wf.writeframes(frames)
-                    
-            if os.path.exists(wav_path):
-                winsound.PlaySound(wav_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-                return
-        except Exception:
-            pass
-
-        # 2. Fallback 1: Các file âm thanh thông báo chuẩn của Windows
-        windows_media_sounds = [
-            r"C:\Windows\Media\Windows Notify Messaging.wav",
-            r"C:\Windows\Media\Windows Notify System Generic.wav",
-            r"C:\Windows\Media\chimes.wav",
-            r"C:\Windows\Media\Windows Ding.wav",
-            r"C:\Windows\Media\notify.wav",
-        ]
-        for snd in windows_media_sounds:
-            if os.path.exists(snd):
-                try:
-                    winsound.PlaySound(snd, winsound.SND_FILENAME | winsound.SND_ASYNC)
-                    return
-                except Exception:
-                    pass
-
-        # 3. Fallback 2: System Alias hoặc MessageBeep
-        try:
-            winsound.PlaySound("Notification.Default", winsound.SND_ALIAS | winsound.SND_ASYNC)
-            return
-        except Exception:
-            pass
-
-        try:
-            winsound.MessageBeep(winsound.MB_ICONASTERISK)
-        except Exception:
-            pass
-
-        # 4. Fallback 3: Hardware Beep
-        try:
-            winsound.Beep(2093, 120)
-            _original_sleep(0.04)
-            winsound.Beep(2793, 260)
-        except Exception:
-            pass
-
-    threading.Thread(target=_run, daemon=True).start()
+    pass
 
 # ================= HÀM XỬ LÝ ĐƯỜNG DẪN ẢNH TRONG EXE =================
 def resource_path(relative_path):
@@ -832,11 +747,9 @@ class UpdateDialog(ctk.CTkToplevel):
         except: pass
 
         latest_ver = self.update_info.get("version") or self.update_info.get("latest_version") or self.current_version
-        has_new = is_newer_version(latest_ver, self.current_version)
+        has_new = is_newer_version(latest_ver, self.current_version) or bool(self.update_info.get("force_show"))
         self.has_new = has_new
         self.latest_ver = latest_ver
-        if has_new:
-            play_money_ting_ting()
 
         # Nút bấm hành động (Neo chặt ở ĐÁY cửa sổ, luôn luôn hiển thị 100%)
         self.btn_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -901,14 +814,7 @@ class UpdateDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             header_frame, text="🔔 TRUNG TÂM CẬP NHẬT PHẦN MỀM",
             font=ctk.CTkFont(family="Arial", size=18, weight="bold"), text_color="#B85C7B"
-        ).pack(side="left")
-
-        ctk.CTkButton(
-            header_frame, text="🔊 Thử chuông", width=100, height=28,
-            font=ctk.CTkFont(family="Arial", size=11, weight="bold"),
-            fg_color="#FADBD8", hover_color="#F5B7B1", text_color="#B85C7B",
-            corner_radius=14, command=play_money_ting_ting
-        ).pack(side="right")
+        ).pack()
 
         # Thẻ thông tin phiên bản
         info_card = ctk.CTkFrame(self, fg_color="#FFFFFF", corner_radius=10, border_width=1, border_color="#E0C8D0")
@@ -970,9 +876,6 @@ class UpdateDialog(ctk.CTkToplevel):
                 upd = self.on_check_again()
                 if upd:
                     self.update_info = upd
-                    l_v = upd.get("version") or upd.get("latest_version")
-                    if l_v and is_newer_version(l_v, self.current_version):
-                        play_money_ting_ting()
             self.after(500, self._refresh_ui)
         threading.Thread(target=_task, daemon=True).start()
 
@@ -1429,20 +1332,18 @@ class AutoAdsPowerGUI:
         self._start_falling_hearts()
 
         # Khởi chạy kiểm tra cập nhật ngầm định kỳ (kể cả khi đang mở tool)
+        self.current_version = CURRENT_VERSION
         self.update_info = None
         self._start_update_loop()
 
     def _start_update_loop(self):
         def _loop():
-            # Chờ 1.5s sau khi mở app là kiểm tra ngay lập tức
-            time.sleep(1.5)
+            # Chờ 1.0s sau khi mở app là kiểm tra ngay lập tức
+            time.sleep(1.0)
             while getattr(self, "root", None) and self.root.winfo_exists():
                 self.check_update_silent()
-                # Kiểm tra định kỳ mỗi 15 giây để bắt ngay tức thì khi vừa có bản mới
-                for _ in range(15):
-                    if not (getattr(self, "root", None) and self.root.winfo_exists()):
-                        return
-                    time.sleep(1)
+                # Kiểm tra định kỳ mỗi 1 giây để bắt ngay tức thì khi vừa chạy CapNhatNhanh!
+                time.sleep(1.0)
         threading.Thread(target=_loop, daemon=True).start()
 
     def check_update_silent(self):
@@ -1450,27 +1351,75 @@ class AutoAdsPowerGUI:
             upd = self.fetch_update_live()
             if upd and isinstance(upd, dict):
                 latest = upd.get("version") or upd.get("latest_version")
-                if latest and is_newer_version(latest, CURRENT_VERSION):
-                    self.update_info = upd
-                    self.root.after(0, lambda l=latest: self._on_new_version_detected(l))
+                cur_v = getattr(self, "current_version", CURRENT_VERSION)
+                force_show = upd.get("force_show", False)
+                if (latest and is_newer_version(latest, cur_v)) or force_show:
+                    # Tránh mở lặp lại liên tục cùng 1 bản cập nhật nếu người dùng vừa đóng bảng
+                    notify_key = (str(latest), str(upd.get("timestamp", "")))
+                    if getattr(self, "_last_notified_key", None) != notify_key:
+                        self._last_notified_key = notify_key
+                        self.update_info = upd
+                        self.root.after(0, lambda l=latest: self._on_new_version_detected(l))
         except Exception:
             pass
 
     def _on_new_version_detected(self, latest_ver):
-        # 1. Đổi nút chuông báo trên thanh công cụ sang màu đỏ
+        # 1. Đổi nút chuông báo trên thanh công cụ sang màu đỏ nổi bật
         self.show_update_badge(latest_ver)
 
-        # 2. Phát âm thanh ting ting chuyển tiền đúng 1 lần cho bản mới này
-        if getattr(self, "_last_sound_version", None) != latest_ver:
-            self._last_sound_version = latest_ver
-            play_money_ting_ting()
-            
-            # 3. Tự động hiển thị ngay cửa sổ thông báo cập nhật lên màn hình (nếu chưa mở)
-            if not (hasattr(self, "_active_update_dialog") and self._active_update_dialog and self._active_update_dialog.winfo_exists()):
-                self.open_update_dialog()
+        # 2. Ghi thông báo nổi bật ra bảng log điều khiển
+        try:
+            self.log_msg("HỆ THỐNG", f"🔔 PHÁT HIỆN BẢN CẬP NHẬT MỚI: v{latest_ver}! Đang tự động mở bảng cập nhật...")
+        except Exception:
+            pass
+
+        # 3. Luôn đảm bảo đóng bảng cũ (nếu có) và mở bật bảng thông báo cập nhật lên vị trí cao nhất (Topmost)
+        if hasattr(self, "_active_update_dialog") and self._active_update_dialog and self._active_update_dialog.winfo_exists():
+            try:
+                self._active_update_dialog.destroy()
+            except Exception:
+                pass
+        self.open_update_dialog()
 
     def fetch_update_live(self):
-        # 1. Kiểm tra trực tiếp từ GitHub Releases API (lấy release mới nhất vừa tạo ngay tức thì)
+        cur_v = getattr(self, "current_version", CURRENT_VERSION)
+
+        # 0. Kiểm tra tín hiệu cập nhật tức thì từ CapNhatNhanh trên máy (Bắt ngay trong 0.1 giây!)
+        try:
+            cand_files = [
+                os.path.join(get_real_app_dir(), "update_signal.json"),
+                "update_signal.json",
+                os.path.join(tempfile.gettempdir(), "auto_ads_update_signal.json")
+            ]
+            for sig_file in cand_files:
+                if os.path.exists(sig_file):
+                    try:
+                        with open(sig_file, "r", encoding="utf-8") as sf:
+                            sig_data = json.load(sf)
+                        sig_v = (sig_data.get("version") or "").lstrip("v").strip()
+                        sig_ts = float(sig_data.get("timestamp", 0))
+                        last_ts = getattr(self, "_last_processed_signal_ts", 0)
+
+                        is_new_signal = (sig_ts > last_ts) and (time.time() - sig_ts < 600)
+                        is_newer_ver = is_newer_version(sig_v, cur_v)
+
+                        if (is_new_signal or is_newer_ver) and sig_v:
+                            self._last_processed_signal_ts = max(last_ts, sig_ts)
+                            upd = {
+                                "version": sig_v,
+                                "download_url": sig_data.get("download_url") or f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/tool_ads_ui.py",
+                                "changelog": sig_data.get("changelog") or f"Bản cập nhật nóng v{sig_v}",
+                                "timestamp": sig_ts,
+                                "force_show": True
+                            }
+                            self.update_info = upd
+                            return upd
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 1. Kiểm tra trực tiếp từ GitHub Releases API (sắp xếp theo ngày phát hành mới nhất)
         try:
             if GITHUB_REPO:
                 headers = {
@@ -1479,58 +1428,81 @@ class AutoAdsPowerGUI:
                     "Cache-Control": "no-cache, no-store, must-revalidate",
                     "Pragma": "no-cache"
                 }
-                gh_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=1&_={int(time.time())}"
-                gh_res = requests.get(gh_url, headers=headers, timeout=6)
-                gh_data = None
+                for tpath in [os.path.join(get_real_app_dir(), "github_token.txt"), "github_token.txt"]:
+                    if os.path.exists(tpath):
+                        try:
+                            with open(tpath, "r", encoding="utf-8") as tf:
+                                tk = tf.read().strip()
+                                if tk:
+                                    headers["Authorization"] = f"Bearer {tk}"
+                                    break
+                        except Exception:
+                            pass
+
+                gh_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=15&_={int(time.time()*1000)}"
+                gh_res = requests.get(gh_url, headers=headers, timeout=5)
+                if gh_res.status_code == 401:
+                    headers.pop("Authorization", None)
+                    gh_res = requests.get(gh_url, headers=headers, timeout=5)
+
                 if gh_res.status_code == 200:
                     r_list = gh_res.json()
                     if isinstance(r_list, list) and len(r_list) > 0:
-                        gh_data = r_list[0]
-                elif gh_res.status_code != 403:
-                    r2 = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest?_={int(time.time())}", headers=headers, timeout=6)
-                    if r2.status_code == 200:
-                        gh_data = r2.json()
+                        sorted_rels = sorted(
+                            r_list,
+                            key=lambda r: (r.get("published_at") or r.get("created_at") or ""),
+                            reverse=True
+                        )
+                        for r_item in sorted_rels:
+                            tag = (r_item.get("tag_name") or "").lstrip("v").strip()
+                            if tag and is_newer_version(tag, cur_v):
+                                download_url = ""
+                                for asset in r_item.get("assets", []):
+                                    if asset.get("name", "").lower().endswith(".py"):
+                                        download_url = asset.get("browser_download_url")
+                                        break
+                                if not download_url:
+                                    for asset in r_item.get("assets", []):
+                                        if asset.get("name", "").lower().endswith(".exe"):
+                                            download_url = asset.get("browser_download_url")
+                                            break
+                                if not download_url:
+                                    download_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/tool_ads_ui.py"
 
-                if gh_data:
-                    tag = (gh_data.get("tag_name") or "").lstrip("v").strip()
-                    changelog = (gh_data.get("body") or "").strip()
-                    download_url = ""
-                    for asset in gh_data.get("assets", []):
-                        if asset.get("name", "").lower().endswith(".py"):
-                            download_url = asset.get("browser_download_url")
-                            break
-                    if not download_url:
-                        for asset in gh_data.get("assets", []):
-                            if asset.get("name", "").lower().endswith(".exe"):
-                                download_url = asset.get("browser_download_url")
-                                break
-                    if not download_url:
-                        download_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/tool_ads_ui.py"
-
-                    if tag:
-                        upd = {
-                            "version": tag,
-                            "download_url": download_url,
-                            "changelog": changelog
-                        }
-                        self.update_info = upd
-                        return upd
+                                upd = {
+                                    "version": tag,
+                                    "download_url": download_url,
+                                    "changelog": (r_item.get("body") or "").strip()
+                                }
+                                self.update_info = upd
+                                return upd
         except Exception:
             pass
 
-        # 2. Fallback nếu GitHub API bị rate-limit hoặc chưa index: đọc trực tiếp file nguồn trên GitHub Raw
+        # 2. Fallback sang GitHub Contents API (tránh CDN cache hoàn toàn) hoặc GitHub Raw
         try:
-            raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/tool_ads_ui.py?_={int(time.time())}"
-            raw_res = requests.get(raw_url, timeout=6)
-            if raw_res.status_code == 200:
-                raw_text = raw_res.text
+            gh_content_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/tool_ads_ui.py?ref=main&_={int(time.time()*1000)}"
+            c_headers = {"User-Agent": "AutoAdsPower-Updater", "Accept": "application/vnd.github.v3+json"}
+            for tpath in [os.path.join(get_real_app_dir(), "github_token.txt"), "github_token.txt"]:
+                if os.path.exists(tpath):
+                    try:
+                        with open(tpath, "r", encoding="utf-8") as tf:
+                            tk = tf.read().strip()
+                            if tk: c_headers["Authorization"] = f"Bearer {tk}"
+                    except: pass
+            r_c = requests.get(gh_content_url, headers=c_headers, timeout=5)
+            if r_c.status_code == 200:
+                import base64
+                c_data = r_c.json()
+                raw_b64 = c_data.get("content", "")
+                raw_text = base64.b64decode(raw_b64).decode("utf-8", errors="ignore")
                 m = re.search(r'CURRENT_VERSION\s*=\s*["\']([^"\']+)["\']', raw_text)
                 if m:
                     ver = m.group(1).strip()
-                    if is_newer_version(ver, CURRENT_VERSION):
+                    if is_newer_version(ver, cur_v):
                         upd = {
                             "version": ver,
-                            "download_url": raw_url,
+                            "download_url": f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/tool_ads_ui.py",
                             "changelog": f"Bản cập nhật nóng v{ver}"
                         }
                         self.update_info = upd
@@ -1546,7 +1518,7 @@ class AutoAdsPowerGUI:
                 self.update_info = upd
                 return upd
 
-            res = requests.get(f"{API_URL}?action=check_update", timeout=6)
+            res = requests.get(f"{API_URL}?action=check_update", timeout=5)
             data = res.json()
             if data.get("success"):
                 upd = data.get("update") or data
@@ -1572,10 +1544,17 @@ class AutoAdsPowerGUI:
         if hasattr(self, "_active_update_dialog") and self._active_update_dialog and self._active_update_dialog.winfo_exists():
             try:
                 self._active_update_dialog.lift()
+                self._active_update_dialog.attributes("-topmost", True)
                 self._active_update_dialog.focus_force()
                 return
             except: pass
-        self._active_update_dialog = UpdateDialog(self.root, CURRENT_VERSION, self.update_info, on_check_again=self.fetch_update_live)
+        cur_v = getattr(self, "current_version", CURRENT_VERSION)
+        self._active_update_dialog = UpdateDialog(self.root, cur_v, self.update_info, on_check_again=self.fetch_update_live)
+        try:
+            self._active_update_dialog.lift()
+            self._active_update_dialog.attributes("-topmost", True)
+            self._active_update_dialog.focus_force()
+        except: pass
 
     def _start_falling_hearts(self):
         """Hiệu ứng trái tim nhỏ rơi như tuyết phía sau ảnh nền."""
