@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "4"
+CURRENT_VERSION = "5"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -109,6 +109,71 @@ def remove_accents(input_str):
     s = re.sub(r'[đĐ]', 'd', input_str)
     return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8')
 
+# ================= HÀM ĐỊNH DANH ĐƯỜNG DẪN THỰC VÀ ÂM THANH =================
+def get_real_exe_path():
+    """Lấy chính xác đường dẫn file exe thực sự của người dùng, KHÔNG lấy file tạm ONEFIL trong Temp."""
+    # 1. Nuitka onefile environment variable (Chính xác 100% khi chạy EXE đóng gói bởi Nuitka)
+    nuitka_bin = os.environ.get("NUITKA_ONEFILE_BINARY")
+    if nuitka_bin and os.path.exists(nuitka_bin):
+        return os.path.abspath(nuitka_bin)
+
+    # 2. Nếu đang chạy bằng python script (.py) khi lập trình
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+
+    # 3. Khi chạy EXE đóng gói: tìm tool_ads_ui.exe thực tế trong thư mục làm việc
+    for cand in [
+        os.path.abspath("tool_ads_ui.exe"),
+        os.path.join(os.path.dirname(os.path.abspath(sys.argv[0] if sys.argv else ".")), "tool_ads_ui.exe")
+    ]:
+        if os.path.exists(cand):
+            return cand
+
+    if sys.argv and sys.argv[0] and sys.argv[0].lower().endswith(".exe") and os.path.exists(sys.argv[0]):
+        return os.path.abspath(sys.argv[0])
+
+    if sys.executable:
+        exe_low = sys.executable.lower()
+        if "onefil" not in exe_low and "temp" not in exe_low and os.path.exists(sys.executable):
+            return os.path.abspath(sys.executable)
+
+    return sys.executable
+
+def get_real_app_dir():
+    """Lấy thư mục làm việc thực sự của tool (nơi chứa tool_ads_ui.exe hoặc tool_ads_ui.py)."""
+    nuitka_bin = os.environ.get("NUITKA_ONEFILE_BINARY")
+    if nuitka_bin and os.path.exists(nuitka_bin):
+        return os.path.dirname(os.path.abspath(nuitka_bin))
+
+    if not getattr(sys, "frozen", False):
+        try:
+            return os.path.dirname(os.path.abspath(__file__))
+        except:
+            return os.path.abspath(".")
+
+    exe_p = get_real_exe_path()
+    if exe_p and os.path.exists(exe_p) and exe_p.lower().endswith(".exe"):
+        return os.path.dirname(os.path.abspath(exe_p))
+
+    return os.path.abspath(".")
+
+def play_money_ting_ting():
+    """Phát âm thanh chuông 'ting ting' chuyển tiền nhận thông báo."""
+    def _run():
+        try:
+            import winsound
+            # Ting ting - 2 nốt ngân vang vui tai như chuông báo nhận tiền ngân hàng
+            winsound.Beep(1760, 110) # Nốt Ting 1 (A6)
+            time.sleep(0.04)
+            winsound.Beep(2637, 280) # Nốt Ting 2 (E7)
+        except Exception:
+            try:
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            except Exception:
+                pass
+    threading.Thread(target=_run, daemon=True).start()
+
 # ================= HÀM XỬ LÝ ĐƯỜNG DẪN ẢNH TRONG EXE =================
 def resource_path(relative_path):
     # 1. Thư mục giải nén tạm thời của Nuitka onefile
@@ -125,12 +190,11 @@ def resource_path(relative_path):
         if os.path.exists(cand):
             return cand
 
-    # 3. Thư mục chứa file exe đang chạy
-    if getattr(sys, "frozen", False) or sys.executable:
-        exe_dir = os.path.dirname(sys.executable)
-        cand = os.path.join(exe_dir, relative_path)
-        if os.path.exists(cand):
-            return cand
+    # 3. Thư mục thật của ứng dụng
+    app_dir = get_real_app_dir()
+    cand = os.path.join(app_dir, relative_path)
+    if os.path.exists(cand):
+        return cand
 
     # 4. Thư mục file mã nguồn hiện tại (__file__)
     try:
@@ -824,13 +888,24 @@ class UpdateDialog(ctk.CTkToplevel):
             is_hot_update = download_url.endswith(".py") or "tool_ads_ui.py" in download_url
             if is_hot_update:
                 import shutil
-                base_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
-                patch_path = os.path.join(base_dir, "app_update.py")
-                shutil.copy2(temp_file, patch_path)
+                app_dir = get_real_app_dir()
+                patch_path = os.path.join(app_dir, "app_update.py")
+                try:
+                    shutil.copy2(temp_file, patch_path)
+                except Exception as e:
+                    pass
                 try:
                     shutil.copy2(temp_file, "app_update.py")
                 except: pass
-                self.after(0, self._show_hot_update_success)
+                try:
+                    # Nếu file nguồn tool_ads_ui.py nằm ngay tại thư mục thì ghi đè luôn
+                    src_f = os.path.join(app_dir, "tool_ads_ui.py")
+                    if os.path.exists(src_f):
+                        shutil.copy2(temp_file, src_f)
+                except: pass
+
+                # TỰ ĐỘNG THỰC HIỆN TẮT ADS VÀ KHỞI ĐỘNG LẠI NGAY (1-CLICK)!
+                self.after(0, self._auto_apply_and_restart)
                 return
 
             if os.path.getsize(temp_file) < 500000:
@@ -839,60 +914,82 @@ class UpdateDialog(ctk.CTkToplevel):
                     if b"<!DOCTYPE html" in head or b"<html" in head:
                         raise Exception("Link tải trả về trang HTML thay vì file exe! Vui lòng kiểm tra lại link.")
 
-            self.after(0, lambda: self._show_exe_update_success(temp_file))
+            # EXE UPDATE: TỰ ĐỘNG THỰC HIỆN TẮT ADS VÀ KHỞI ĐỘNG LẠI NGAY (1-CLICK)!
+            self.after(0, lambda: self._execute_exe_updater(temp_file))
 
         except Exception as e:
             self.after(0, lambda err=str(e): self._download_failed(err))
 
-    def _show_hot_update_success(self):
+    def _auto_apply_and_restart(self):
+        """Tự động đóng AdsPower, thoát tool và khởi động lại với bản mới (1-Click, không cần bấm thêm nút)."""
         self.progress_bar.set(1.0)
         self.lbl_progress.configure(
-            text="🎉 Đã tải và cài đặt xong! Vui lòng khởi động lại tool để áp dụng.",
+            text="🎉 Đã tải và cài đặt xong! Đang tắt AdsPower & tự khởi động lại...",
             text_color="#27AE60"
         )
         self.btn_action.configure(
-            state="normal",
-            text="🔄 Khởi động lại ngay",
-            fg_color="#27AE60",
-            hover_color="#219653",
-            command=self._restart_now
+            text="⏳ Đang tự khởi động lại...",
+            state="disabled",
+            fg_color="#27AE60"
         )
-        self.btn_cancel.configure(
-            state="normal",
-            text="Đóng (Mở lại sau)",
-            fg_color="#D5DBDB",
-            hover_color="#BDC3C7",
-            command=self.destroy
-        )
-
-    def _restart_now(self):
-        self.lbl_progress.configure(text="⏳ Đang đóng và khởi động lại tool...", text_color="#2980B9")
-        self.btn_action.configure(state="disabled")
         self.btn_cancel.configure(state="disabled")
         try:
             self.update_idletasks()
         except: pass
 
-        is_frozen = getattr(sys, 'frozen', False)
-        exe_path = sys.executable if is_frozen else sys.executable
-        args = [exe_path] if is_frozen else [sys.executable, "tool_ads_ui.py"]
-        
-        try:
-            DETACHED_PROCESS = 0x00000008
-            subprocess.Popen(
-                args,
-                creationflags=DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-                close_fds=True
-            )
-        except Exception:
+        def _do_restart():
+            time.sleep(1.2)
+            # 1. Tắt app AdsPower triệt để
             try:
-                subprocess.Popen(args)
+                subprocess.call('taskkill /F /IM "AdsPower Global.exe" /IM "AdsPower Browser.exe" >nul 2>&1', shell=True)
+            except: pass
+
+            # 2. Lấy đường dẫn exe thật (KHÔNG lấy Temp python.exe của Nuitka)
+            real_exe = get_real_exe_path()
+            app_dir = get_real_app_dir()
+            current_pid = os.getpid()
+
+            restart_bat = os.path.join(tempfile.gettempdir(), f"restart_tool_{int(time.time())}.bat")
+            
+            if real_exe.lower().endswith(".exe"):
+                launch_cmd = f'start "" "{real_exe}"'
+            else:
+                py_exe = sys.executable if not ("temp" in sys.executable.lower() or "onefil" in sys.executable.lower()) else "python"
+                launch_cmd = f'start "" "{py_exe}" "tool_ads_ui.py"'
+
+            bat_content = f"""@echo off
+chcp 65001 >nul
+:: Dong AdsPower
+taskkill /F /IM "AdsPower Global.exe" /IM "AdsPower Browser.exe" >nul 2>&1
+:: Doi tool cu thoat hoan toan
+timeout /t 1 /nobreak >nul
+taskkill /F /PID {current_pid} >nul 2>&1
+:: Chuyen vao thu muc tool va khoi dong ban moi
+cd /d "{app_dir}"
+{launch_cmd}
+timeout /t 2 /nobreak >nul
+del "%~f0" >nul 2>&1
+"""
+            try:
+                with open(restart_bat, "w", encoding="utf-8") as bf:
+                    bf.write(bat_content)
+
+                DETACHED_PROCESS = 0x00000008
+                subprocess.Popen(
+                    ["cmd.exe", "/c", restart_bat],
+                    creationflags=DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                    close_fds=True
+                )
             except Exception:
                 try:
-                    os.system(f'start "" "{exe_path}"')
-                except: pass
-        time.sleep(0.5)
-        os._exit(0)
+                    subprocess.Popen([real_exe] if real_exe.lower().endswith(".exe") else [sys.executable, "tool_ads_ui.py"])
+                except Exception:
+                    pass
+
+            time.sleep(0.3)
+            os._exit(0)
+
+        threading.Thread(target=_do_restart, daemon=True).start()
 
     def _update_progress(self, progress, text):
         try:
@@ -906,49 +1003,44 @@ class UpdateDialog(ctk.CTkToplevel):
         self.btn_cancel.configure(state="normal")
         self.lbl_progress.configure(text=f"❌ Lỗi tải bản mới: {err_msg[:60]}", text_color="#C0392B")
 
-    def _show_exe_update_success(self, temp_file):
+    def _execute_exe_updater(self, temp_file):
+        """Tự động đóng AdsPower, thay thế file exe mới và bật lại (1-Click)."""
         self.progress_bar.set(1.0)
         self.lbl_progress.configure(
-            text="🎉 Đã tải xong bản mới! Bấm [Khởi động lại ngay] để hoàn tất thay thế.",
+            text="🎉 Đã tải xong! Đang tắt AdsPower, thay thế bản mới & khởi động lại...",
             text_color="#27AE60"
         )
-        self.btn_action.configure(
-            state="normal",
-            text="🔄 Khởi động lại ngay",
-            fg_color="#27AE60",
-            hover_color="#219653",
-            command=lambda: self._execute_exe_updater(temp_file)
-        )
-        self.btn_cancel.configure(
-            state="normal",
-            text="Để sau",
-            fg_color="#D5DBDB",
-            hover_color="#BDC3C7",
-            command=self.destroy
-        )
-
-    def _execute_exe_updater(self, temp_file):
-        self.lbl_progress.configure(text="⏳ Đang tự động thay thế & khởi động lại...", text_color="#2980B9")
-        self.btn_action.configure(state="disabled")
+        self.btn_action.configure(state="disabled", text="⏳ Đang thay thế bản mới...")
         self.btn_cancel.configure(state="disabled")
         try:
             self.update_idletasks()
         except: pass
-        
-        is_frozen = getattr(sys, 'frozen', False)
-        target_exe = sys.executable if is_frozen else os.path.abspath("tool_ads_ui.exe")
 
-        updater_bat = os.path.abspath("updater.bat")
-        bat_content = f"""@echo off
+        def _do_exe_update():
+            time.sleep(1.2)
+            real_exe = get_real_exe_path()
+            app_dir = get_real_app_dir()
+            current_pid = os.getpid()
+
+            # Tắt AdsPower trước
+            try:
+                subprocess.call('taskkill /F /IM "AdsPower Global.exe" /IM "AdsPower Browser.exe" >nul 2>&1', shell=True)
+            except: pass
+
+            updater_bat = os.path.join(tempfile.gettempdir(), f"updater_{int(time.time())}.bat")
+            bat_content = f"""@echo off
 chcp 65001 >nul
 title Auto Updater - Dang cap nhat...
 echo ========================================================
 echo DANG CAP NHAT TOOL LEN PHIEN BAN MOI...
 echo Vui long cho trong giay lat...
 echo ========================================================
-timeout /t 2 /nobreak >nul
+taskkill /F /IM "AdsPower Global.exe" /IM "AdsPower Browser.exe" >nul 2>&1
+timeout /t 1 /nobreak >nul
+taskkill /F /PID {current_pid} >nul 2>&1
+timeout /t 1 /nobreak >nul
 
-set "TARGET={target_exe}"
+set "TARGET={real_exe}"
 set "NEW={temp_file}"
 
 :wait_loop
@@ -964,28 +1056,28 @@ if not exist "%TARGET%" (
     copy /y "%NEW%" "%TARGET%" >nul 2>&1
 )
 
+cd /d "{app_dir}"
 echo Khoi dong lai tool phien ban moi...
 start "" "%TARGET%"
-del "%~f0"
+timeout /t 2 /nobreak >nul
+del "%~f0" >nul 2>&1
 """
-        try:
-            with open(updater_bat, "w", encoding="utf-8") as bf:
-                bf.write(bat_content)
+            try:
+                with open(updater_bat, "w", encoding="utf-8") as bf:
+                    bf.write(bat_content)
 
-            DETACHED_PROCESS = 0x00000008
-            subprocess.Popen(
-                ["cmd.exe", "/c", updater_bat],
-                creationflags=DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-                close_fds=True
-            )
+                DETACHED_PROCESS = 0x00000008
+                subprocess.Popen(
+                    ["cmd.exe", "/c", updater_bat],
+                    creationflags=DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                    close_fds=True
+                )
+                time.sleep(0.3)
+                os._exit(0)
+            except Exception as e:
+                self.after(0, lambda err=str(e): self._download_failed(f"Lỗi khởi chạy updater: {err}"))
 
-            time.sleep(0.5)
-            os._exit(0)
-
-        except Exception as e:
-            self.lbl_progress.configure(text=f"❌ Lỗi ghi file updater: {str(e)}", text_color="#C0392B")
-            self.btn_action.configure(state="normal", text="Thử lại")
-            self.btn_cancel.configure(state="normal")
+        threading.Thread(target=_do_exe_update, daemon=True).start()
 
 # ================= GIAO DIỆN CHÍNH =================
 class AutoAdsPowerGUI:
@@ -1148,7 +1240,7 @@ class AutoAdsPowerGUI:
         self.bg_images = []
         bg_config_file = resource_path("bg_coordinates.json")
         if not os.path.exists(bg_config_file):
-            exe_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+            exe_dir = get_real_app_dir()
             cand = os.path.join(exe_dir, "bg_coordinates.json")
             if os.path.exists(cand):
                 bg_config_file = cand
@@ -1189,10 +1281,12 @@ class AutoAdsPowerGUI:
 
     def _start_update_loop(self):
         def _loop():
-            time.sleep(2)
+            # Chờ 1.5s sau khi mở app là kiểm tra ngay lập tức
+            time.sleep(1.5)
             while getattr(self, "root", None) and self.root.winfo_exists():
                 self.check_update_silent()
-                for _ in range(45):
+                # Kiểm tra định kỳ mỗi 15 giây để bắt ngay tức thì khi vừa có bản mới
+                for _ in range(15):
                     if not (getattr(self, "root", None) and self.root.winfo_exists()):
                         return
                     time.sleep(1)
@@ -1205,26 +1299,49 @@ class AutoAdsPowerGUI:
                 latest = upd.get("version") or upd.get("latest_version")
                 if latest and is_newer_version(latest, CURRENT_VERSION):
                     self.update_info = upd
-                    self.root.after(0, lambda: self.show_update_badge(latest))
+                    self.root.after(0, lambda l=latest: self._on_new_version_detected(l))
         except Exception:
             pass
 
+    def _on_new_version_detected(self, latest_ver):
+        # 1. Đổi nút chuông báo trên thanh công cụ sang màu đỏ
+        self.show_update_badge(latest_ver)
+
+        # 2. Phát âm thanh ting ting chuyển tiền đúng 1 lần cho bản mới này
+        if getattr(self, "_last_sound_version", None) != latest_ver:
+            self._last_sound_version = latest_ver
+            play_money_ting_ting()
+            
+            # 3. Tự động hiển thị ngay cửa sổ thông báo cập nhật lên màn hình (nếu chưa mở)
+            if not (hasattr(self, "_active_update_dialog") and self._active_update_dialog and self._active_update_dialog.winfo_exists()):
+                self.open_update_dialog()
+
     def fetch_update_live(self):
+        # 1. Kiểm tra trực tiếp từ GitHub Releases API (lấy release mới nhất vừa tạo ngay tức thì)
         try:
-            # 1. Kiểm tra trực tiếp từ GitHub Releases (Tự động 100%, không cần qua Google Sheet)
             if GITHUB_REPO:
-                gh_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-                gh_res = requests.get(
-                    gh_url,
-                    headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "AutoAdsPower-Updater"},
-                    timeout=8
-                )
+                headers = {
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "AutoAdsPower-Updater",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache"
+                }
+                gh_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=1&_={int(time.time())}"
+                gh_res = requests.get(gh_url, headers=headers, timeout=6)
+                gh_data = None
                 if gh_res.status_code == 200:
-                    gh_data = gh_res.json()
+                    r_list = gh_res.json()
+                    if isinstance(r_list, list) and len(r_list) > 0:
+                        gh_data = r_list[0]
+                elif gh_res.status_code != 403:
+                    r2 = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest?_={int(time.time())}", headers=headers, timeout=6)
+                    if r2.status_code == 200:
+                        gh_data = r2.json()
+
+                if gh_data:
                     tag = (gh_data.get("tag_name") or "").lstrip("v").strip()
                     changelog = (gh_data.get("body") or "").strip()
                     download_url = ""
-                    # Ưu tiên tìm file hot-update (.py) trước để tải siêu nhẹ 300KB
                     for asset in gh_data.get("assets", []):
                         if asset.get("name", "").lower().endswith(".py"):
                             download_url = asset.get("browser_download_url")
@@ -1248,7 +1365,27 @@ class AutoAdsPowerGUI:
         except Exception:
             pass
 
-        # 2. Fallback nếu GitHub chưa có release
+        # 2. Fallback nếu GitHub API bị rate-limit hoặc chưa index: đọc trực tiếp file nguồn trên GitHub Raw
+        try:
+            raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/tool_ads_ui.py?_={int(time.time())}"
+            raw_res = requests.get(raw_url, timeout=6)
+            if raw_res.status_code == 200:
+                raw_text = raw_res.text
+                m = re.search(r'CURRENT_VERSION\s*=\s*["\']([^"\']+)["\']', raw_text)
+                if m:
+                    ver = m.group(1).strip()
+                    if is_newer_version(ver, CURRENT_VERSION):
+                        upd = {
+                            "version": ver,
+                            "download_url": raw_url,
+                            "changelog": f"Bản cập nhật nóng v{ver}"
+                        }
+                        self.update_info = upd
+                        return upd
+        except Exception:
+            pass
+
+        # 3. Fallback sang Google Apps Script API
         try:
             app_cfg = getattr(self.root, "app_config", {})
             if "update" in app_cfg and isinstance(app_cfg["update"], dict):
@@ -1256,7 +1393,7 @@ class AutoAdsPowerGUI:
                 self.update_info = upd
                 return upd
 
-            res = requests.get(f"{API_URL}?action=check_update", timeout=8)
+            res = requests.get(f"{API_URL}?action=check_update", timeout=6)
             data = res.json()
             if data.get("success"):
                 upd = data.get("update") or data
@@ -1279,7 +1416,13 @@ class AutoAdsPowerGUI:
             pass
 
     def open_update_dialog(self):
-        UpdateDialog(self.root, CURRENT_VERSION, self.update_info, on_check_again=self.fetch_update_live)
+        if hasattr(self, "_active_update_dialog") and self._active_update_dialog and self._active_update_dialog.winfo_exists():
+            try:
+                self._active_update_dialog.lift()
+                self._active_update_dialog.focus_force()
+                return
+            except: pass
+        self._active_update_dialog = UpdateDialog(self.root, CURRENT_VERSION, self.update_info, on_check_again=self.fetch_update_live)
 
     def _start_falling_hearts(self):
         """Hiệu ứng trái tim nhỏ rơi như tuyết phía sau ảnh nền."""
@@ -6727,7 +6870,7 @@ import importlib.util
 
 def load_patched_gui():
     import shutil
-    base_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    base_dir = get_real_app_dir()
     
     # Đảm bảo các file ảnh và config luôn có sẵn ở thư mục chạy
     for fname in ["img1.png", "img2.png", "img3.png", "bg_coordinates.json", "chick.ico"]:
