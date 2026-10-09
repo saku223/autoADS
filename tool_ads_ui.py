@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "3"
+CURRENT_VERSION = "4"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -111,14 +111,41 @@ def remove_accents(input_str):
 
 # ================= HÀM XỬ LÝ ĐƯỜNG DẪN ẢNH TRONG EXE =================
 def resource_path(relative_path):
+    # 1. Thư mục giải nén tạm thời của Nuitka onefile
+    nuitka_dir = os.environ.get("NUITKA_ONEFILE_DIRECTORY")
+    if nuitka_dir:
+        cand = os.path.join(nuitka_dir, relative_path)
+        if os.path.exists(cand):
+            return cand
+
+    # 2. Thư mục giải nén tạm thời của PyInstaller
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        cand = os.path.join(meipass, relative_path)
+        if os.path.exists(cand):
+            return cand
+
+    # 3. Thư mục chứa file exe đang chạy
+    if getattr(sys, "frozen", False) or sys.executable:
+        exe_dir = os.path.dirname(sys.executable)
+        cand = os.path.join(exe_dir, relative_path)
+        if os.path.exists(cand):
+            return cand
+
+    # 4. Thư mục file mã nguồn hiện tại (__file__)
     try:
-        base_path = sys._MEIPASS
-    except Exception:
-        try:
-            base_path = os.path.dirname(__file__)
-        except NameError:
-            base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        cand = os.path.join(script_dir, relative_path)
+        if os.path.exists(cand):
+            return cand
+    except: pass
+
+    # 5. Thư mục làm việc hiện tại (CWD)
+    cand = os.path.abspath(relative_path)
+    if os.path.exists(cand):
+        return cand
+
+    return relative_path
 
 # ================= HỆ THỐNG BẢO MẬT (HWID) =================
 def get_hwid():
@@ -227,6 +254,12 @@ class DraggableBackground:
         self.update_image()
 
     def update_image(self):
+        if not hasattr(self, 'original_image') or self.original_image is None:
+            return
+        if not hasattr(self, 'ctk_image') or self.ctk_image is None:
+            return
+        if not hasattr(self, 'label') or self.label is None:
+            return
         try:
             rotated = self.original_image.rotate(self.angle, expand=True, resample=Image.Resampling.BICUBIC)
         except AttributeError:
@@ -978,6 +1011,7 @@ class AutoAdsPowerGUI:
 
         top_header_frame = ctk.CTkFrame(root, fg_color="transparent")
         top_header_frame.pack(pady=(10, 6), padx=(150, 25), fill="x")
+        self.top_header_frame = top_header_frame
         
 
         title_lbl = ctk.CTkLabel(
@@ -1112,7 +1146,14 @@ class AutoAdsPowerGUI:
         self.log_msg("HỆ THỐNG", "🌟 Đã kết nối với hệ thống Server API an toàn!")
 
         self.bg_images = []
-        bg_config_file = "bg_coordinates.json"
+        bg_config_file = resource_path("bg_coordinates.json")
+        if not os.path.exists(bg_config_file):
+            exe_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+            cand = os.path.join(exe_dir, "bg_coordinates.json")
+            if os.path.exists(cand):
+                bg_config_file = cand
+            elif os.path.exists("bg_coordinates.json"):
+                bg_config_file = "bg_coordinates.json"
 
         if os.path.exists(bg_config_file):
             try:
@@ -1126,10 +1167,13 @@ class AutoAdsPowerGUI:
                     if item.get("file") == "img2.png":
                         try:
                             bg.label.lift(top_header_frame)
-                        except: pass
+                        except:
+                            try: bg.label.lift()
+                            except: pass
                     self.bg_images.append(bg)
                 self.log_msg("HỆ THỐNG", "✨ Đã load thành công giao diện Custom từ file config!")
-            except: self._load_default_bgs()
+            except Exception as e:
+                self._load_default_bgs()
         else:
             self._load_default_bgs()
             
@@ -5473,17 +5517,25 @@ class AutoAdsPowerGUI:
         self.root.after(0, lambda: self.counter_label.configure(text=txt))
 
     def _load_default_bgs(self):
-        img_files = ["img1.png", "img2.png", "img3.png"] 
-        start_x = 50
-        for img in img_files:
-            bg = DraggableBackground(self.root, img, x=start_x, y=50, size=150)
-            bg.lock()
-            if img == "img2.png":
-                try:
-                    bg.label.lift()
-                except: pass
-            self.bg_images.append(bg)
-            start_x += 200
+        default_items = [
+            {"file": "img1.png", "x": -21, "y": 480, "size": 310, "angle": 0},
+            {"file": "img2.png", "x": -29, "y": -19, "size": 130, "angle": 30},
+            {"file": "img3.png", "x": 1100, "y": 616, "size": 350, "angle": 0}
+        ]
+        for item in default_items:
+            try:
+                bg = DraggableBackground(self.root, item["file"], x=item["x"], y=item["y"], size=item["size"])
+                bg.angle = item.get("angle", 0)
+                bg.update_image()
+                bg.lock()
+                if item["file"] == "img2.png":
+                    try:
+                        bg.label.lift(getattr(self, 'top_header_frame', None))
+                    except:
+                        try: bg.label.lift()
+                        except: pass
+                self.bg_images.append(bg)
+            except: pass
 
     def toggle_main_adspower_app(self):
         try:
@@ -6674,7 +6726,18 @@ class AutoAdsPowerGUI:
 import importlib.util
 
 def load_patched_gui():
+    import shutil
     base_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    
+    # Đảm bảo các file ảnh và config luôn có sẵn ở thư mục chạy
+    for fname in ["img1.png", "img2.png", "img3.png", "bg_coordinates.json", "chick.ico"]:
+        target_f = os.path.join(base_dir, fname)
+        if not os.path.exists(target_f):
+            src_f = resource_path(fname)
+            if os.path.exists(src_f) and os.path.abspath(src_f) != os.path.abspath(target_f):
+                try: shutil.copy2(src_f, target_f)
+                except: pass
+
     patch_file = os.path.join(base_dir, "app_update.py")
     if not os.path.exists(patch_file) and os.path.exists("app_update.py"):
         patch_file = "app_update.py"
