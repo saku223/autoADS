@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "1.1.1"
+CURRENT_VERSION = "1.1.2"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
