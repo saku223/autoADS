@@ -50,7 +50,7 @@ ctk.set_appearance_mode("Light")
 
 CONFIG_FILE = "config_ads.json"
 LICENSE_FILE = "license.txt"
-CURRENT_VERSION = "12.0.0"
+CURRENT_VERSION = "12.0.1"
 GITHUB_REPO = "saku223/autoADS"
 API_URL = "https://script.google.com/macros/s/AKfycbydxSMlkK0vOp_QHcmSXjCJJ71MAYBO9Bhbq3nmtyaWXYNn-k8mZieHrb4JNdzSRXy4Dw/exec"
 
@@ -6252,14 +6252,16 @@ class AutoAdsPowerGUI:
         ads_api = self.ads_api_entry.get().strip()
         ads_secret = self.ads_secret_entry.get().strip()
         headers = {"Content-Type": "application/json"}
-        if ads_secret: headers["api-key"] = ads_secret
+        if ads_secret:
+            headers["Authorization"] = f"Bearer {ads_secret}"
+            headers["api-key"] = ads_secret
 
         try:
             self.root.after(0, self.update_info, index, "🛑 [██░░░░░░] Đang đóng...", "#D96E66")
             self.log_msg("HỆ THỐNG", f"🚪 Đang ép đóng profile {profile_id} trước khi xóa...")
             
             if self.threads_data[index].get("is_browser_open", False):
-                try: requests.get(f"{ads_api}/api/v1/browser/stop?user_id={profile_id}", timeout=2)
+                try: requests.get(f"{ads_api}/api/v1/browser/stop?user_id={profile_id}", headers=headers, timeout=2)
                 except: pass
                 self.root.after(0, self.update_info, index, "⏳ [█████░░░] Đang chờ...", "#D96E66")
                 time.sleep(1) 
@@ -6467,6 +6469,14 @@ class AutoAdsPowerGUI:
             self.animate_row(index)
             threading.Thread(target=self.run_worker, args=(index, fproxy_key, bypass_checks), daemon=True).start()
 
+    def get_ads_headers(self):
+        ads_secret = self.ads_secret_entry.get().strip() if hasattr(self, "ads_secret_entry") else ""
+        headers = {"Content-Type": "application/json"}
+        if ads_secret:
+            headers["Authorization"] = f"Bearer {ads_secret}"
+            headers["api-key"] = ads_secret
+        return headers
+
     def toggle_browser(self, index): threading.Thread(target=self._toggle_browser_worker, args=(index,), daemon=True).start()
 
     def _toggle_browser_worker(self, index):
@@ -6477,9 +6487,10 @@ class AutoAdsPowerGUI:
             self.log_msg(t_name, "⚠️ Luồng này chưa tạo profile, không có trình duyệt để mở/đóng!"); return
 
         ads_api = self.ads_api_entry.get().strip()
+        headers = self.get_ads_headers()
         
         try:
-            res_active = requests.get(f"{ads_api}/api/v1/browser/active?user_id={profile_id}", timeout=5).json()
+            res_active = requests.get(f"{ads_api}/api/v1/browser/active?user_id={profile_id}", headers=headers, timeout=5).json()
             is_really_open = False
             
             if res_active.get("code") == 0 and res_active.get("data", {}).get("status") == "Active":
@@ -6488,7 +6499,7 @@ class AutoAdsPowerGUI:
             if is_really_open:
                 self.log_msg(t_name, f"🚪 Đang gửi lệnh ĐÓNG cửa sổ trình duyệt...")
                 try:
-                    res = requests.get(f"{ads_api}/api/v1/browser/stop?user_id={profile_id}", timeout=3).json()
+                    res = requests.get(f"{ads_api}/api/v1/browser/stop?user_id={profile_id}", headers=headers, timeout=3).json()
                     if res.get("code") == 0 or "not open" in str(res):
                         self.log_msg(t_name, "✅ Đã đóng cửa sổ trình duyệt thành công!")
                         thread_info["is_browser_open"] = False
@@ -6503,7 +6514,7 @@ class AutoAdsPowerGUI:
                     self.root.after(0, lambda: thread_info["btn_toggle_browser"].configure(text="Mở profile"))
             else:
                 self.log_msg(t_name, f"🌐 Đang gửi lệnh MỞ cửa sổ trình duyệt...")
-                res = requests.get(f"{ads_api}/api/v1/browser/start?user_id={profile_id}", timeout=10).json()
+                res = requests.get(f"{ads_api}/api/v1/browser/start?user_id={profile_id}", headers=headers, timeout=10).json()
                 if res.get("code") == 0:
                     self.log_msg(t_name, "✅ Đã mở trình duyệt thành công!")
                     thread_info["is_browser_open"] = True
@@ -6525,9 +6536,7 @@ class AutoAdsPowerGUI:
 
         self.start_delete_countdown(index)
         ads_api = self.ads_api_entry.get().strip()
-        ads_secret = self.ads_secret_entry.get().strip()
-        headers = {"Content-Type": "application/json"}
-        if ads_secret: headers["api-key"] = ads_secret
+        headers = self.get_ads_headers()
 
         try:
             self.root.after(0, self.update_info, index, "🛑 [██░░░░░░] Đang đóng...", "#D96E66")
@@ -6535,7 +6544,7 @@ class AutoAdsPowerGUI:
             
             # Chỉ đóng trình duyệt và sleep nếu thực sự đang mở trình duyệt
             if self.threads_data[index].get("is_browser_open", False):
-                try: requests.get(f"{ads_api}/api/v1/browser/stop?user_id={profile_id}", timeout=2)
+                try: requests.get(f"{ads_api}/api/v1/browser/stop?user_id={profile_id}", headers=headers, timeout=2)
                 except: pass
                 self.root.after(0, self.update_info, index, "⏳ [█████░░░] Đang chờ...", "#D96E66")
                 time.sleep(1)
@@ -6751,11 +6760,18 @@ class AutoAdsPowerGUI:
                     loc_city = match_city.group(1).strip()
                     if loc_city and loc_city not in ["-", "Unknown"]: loc_str = loc_city
 
-                # Cố gắng quét tọa độ trực tiếp trong HTML (nếu có)
-                c_match = re.search(r'(2[0-4]|1[0-9]|[8-9])\.(\d{2,10})[^0-9a-zA-Z]+(10[2-9]|110)\.(\d{2,10})', html)
-                if c_match:
-                    lat = float(f"{c_match.group(1)}.{c_match.group(2)}")
-                    lon = float(f"{c_match.group(3)}.{c_match.group(4)}")
+                # Cố gắng quét tọa độ trực tiếp từ thẻ <ip-map> hoặc HTML
+                map_match = re.search(r'<ip-map\s+[^>]*?:lat="([-\d.]+)"\s+[^>]*?:lng="([-\d.]+)"', html)
+                if not map_match:
+                    map_match = re.search(r':lat="([-\d.]+)"\s*:lng="([-\d.]+)"', html)
+                if map_match:
+                    lat = float(map_match.group(1))
+                    lon = float(map_match.group(2))
+                else:
+                    c_match = re.search(r'(2[0-4]|1[0-9]|[8-9])\.(\d{2,10})[^0-9a-zA-Z]+(10[2-9]|110)\.(\d{2,10})', html)
+                    if c_match:
+                        lat = float(f"{c_match.group(1)}.{c_match.group(2)}")
+                        lon = float(f"{c_match.group(3)}.{c_match.group(4)}")
         except: pass
 
         # 2. TUYỆT CHIÊU: Nếu có tên Thành phố mà không tìm thấy Tọa độ -> Tự động tra cứu Tọa độ chuẩn!
@@ -6791,7 +6807,10 @@ class AutoAdsPowerGUI:
     def check_location_via_proxy(self, t_name, proxy_data):
         self.log_msg(t_name, "🔍 Đang đồng bộ vị trí hiển thị với server AdsPower...")
         try:
-            proxy_url = f"http://{proxy_data['user']}:{proxy_data['pass']}@{proxy_data['ip']}:{proxy_data['port']}"
+            if proxy_data.get('user') and proxy_data.get('pass'):
+                proxy_url = f"http://{proxy_data['user']}:{proxy_data['pass']}@{proxy_data['ip']}:{proxy_data['port']}"
+            else:
+                proxy_url = f"http://{proxy_data['ip']}:{proxy_data['port']}"
             proxies = {"http": proxy_url, "https": proxy_url}
             
             try:
@@ -6898,11 +6917,14 @@ class AutoAdsPowerGUI:
                         
                     return {"ip": ip, "port": port, "user": res_current["data"].get("user", ""), "pass": res_current["data"].get("pass", ""), "check_count": local_check_count, "location": real_loc, "lat": lat, "lon": lon}
                 else: 
+                    err_msg = res_current.get("error") or res_current.get("message") or "Chưa có IP mới"
                     self.update_info(index, "Proxy đang xoay...", "#CD5C5C")
+                    self.log_msg(t_name, f"⚠️ FProxy: {err_msg}")
                     time.sleep(5)
-            except Exception:
-                 self.update_info(index, "Lỗi API FProxy...", "#CD5C5C")
-                 time.sleep(5)
+            except Exception as e:
+                self.update_info(index, "Lỗi API FProxy...", "#CD5C5C")
+                self.log_msg(t_name, f"⚠️ Lỗi quét IP: {str(e)}")
+                time.sleep(5)
         return None
 
     def doi_ip_fproxy(self, index, t_name, fproxy_key, old_ip):
@@ -6943,12 +6965,12 @@ class AutoAdsPowerGUI:
                     return 
                     
                 else:
-                    msg = res_new.get("message", "")
+                    msg = res_new.get("error") or res_new.get("message") or ""
                     wait_time = 15 
                     match = re.search(r'\d+', msg)
                     if match:
                         wait_time = int(match.group(0))
-                    self.log_msg(t_name, f"⏳ Chờ chút nhé. Hệ thống đang làm mới và sẽ tự gửi lại lệnh sau {wait_time}s...")
+                    self.log_msg(t_name, f"⏳ FProxy: {msg or 'Hệ thống đang xoay'} -> Sẽ gửi lại lệnh sau {wait_time}s...")
 
                     end_time = time.time() + wait_time
                     while self.threads_data[index]["is_running"]:
@@ -6992,24 +7014,27 @@ class AutoAdsPowerGUI:
         ip = proxy_data["ip"]
         self.log_msg(t_name, f"🚀 Bắn API AdsPower tạo hồ sơ với Proxy: {ip}...")
         
-        headers = {"Content-Type": "application/json"}
-        if ads_secret: headers["api-key"] = ads_secret
+        headers = self.get_ads_headers()
+
+        user_proxy_conf = {
+            "proxy_soft": "other", "proxy_type": "http",
+            "proxy_host": str(ip), "proxy_port": str(proxy_data["port"])
+        }
+        if proxy_data.get("user") and proxy_data.get("pass"):
+            user_proxy_conf["proxy_user"] = str(proxy_data["user"])
+            user_proxy_conf["proxy_password"] = str(proxy_data["pass"])
 
         payload = {
             "name": f"Profile_{ip}",
             "group_id": "0", 
-            "user_proxy_config": {
-                "proxy_soft": "other", "proxy_type": "http",
-                "proxy_host": str(ip), "proxy_port": str(proxy_data["port"]),
-                "proxy_user": str(proxy_data["user"]), "proxy_password": str(proxy_data["pass"])
-            },
+            "user_proxy_config": user_proxy_conf,
             "fingerprint_config": {
                 "os": "android", "os_version": "12",
                 "browser_kernel_config": {"version": "134", "type": "chrome"},
                 "user_agent": "Mozilla/5.0 (Linux; Android 12; SM-G973U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36",
                 "ua_browser_version": "110", "resolution_type": "0",
                 "resolution": "750x1334", "window_size_type": "0", "window_size": "750x1334",
-                "webrtc": "forward", "canvas": "0", "webgl_image": "0"
+                "webrtc": "proxy", "canvas": "0", "webgl_image": "0"
             }
         }
         
